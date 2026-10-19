@@ -1,0 +1,26 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cobranza_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cobranza
+      POSTGRES_USER: cobranza
+      POSTGRES_PASSWORD: cobranza_dev_pwd
+      # Locale e indexacion coherentes con practicas de cobranza en Mexico.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "5432:5432"
+    volumes:
+      - cobranza_pgdata:/var/lib/postgresql/data
+      # Se ejecuta solo la primera vez que se crea el volumen.
+      - ./db/00_extensions.sql:/docker-entrypoint-initdb.d/00_extensions.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cobranza -d cobranza"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+volumes:
+  cobranza_pgdata:

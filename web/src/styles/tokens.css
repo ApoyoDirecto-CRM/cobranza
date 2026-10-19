@@ -1,0 +1,98 @@
+/* =========================================================================
+   Design tokens
+   Mobile-first, alto contraste (WCAG AA como minimo).
+
+   Decisiones:
+   - Contraste: el texto principal #0f172a sobre blanco da 15:1. Los colores de
+     estado se eligieron para superar 4.5:1 tambien sobre superficie oscura.
+   - El verde de "pagado" y el rojo de "vencido" NUNCA son el unico portador de
+     informacion: siempre van acompanados de texto o icono, para que el color
+     no sea indispensable.
+   - Tipografia base de 16px para que el navegador no aplique zoom automatico en
+     iOS al enfocar un input.
+   ========================================================================= */
+
+:root {
+    color-scheme: light dark;
+
+    /* Marca */
+    --brand-900: #0b1220;
+    --brand-800: #12203a;
+    --brand-700: #1e3a8a;
+    --brand-600: #1d4ed8;
+    --brand-500: #2563eb;
+    --brand-100: #dbeafe;
+    --brand-50: #eff6ff;
+
+    /* Estado */
+    --ok-700: #15803d;
+    --ok-100: #dcfce7;
+    --warn-700: #a16207;
+    --warn-100: #fef3c7;
+    --danger-700: #b91c1c;
+    --danger-100: #fee2e2;
+    --info-700: #0369a1;
+    --info-100: #e0f2fe;
+
+    /* Superficies y texto */
+    --bg: #f1f5f9;
+    --surface: #ffffff;
+    --surface-2: #f8fafc;
+    --border: #cbd5e1;
+    --border-strong: #94a3b8;
+    --text: #0f172a;
+    --text-muted: #475569;
+    --text-inverse: #ffffff;
+
+    /* Espaciado (escala de 4px) */
+    --sp-1: 0.25rem;
+    --sp-2: 0.5rem;
+    --sp-3: 0.75rem;
+    --sp-4: 1rem;
+    --sp-5: 1.5rem;
+    --sp-6: 2rem;
+    --sp-7: 3rem;
+
+    /* Radios y sombras */
+    --r-sm: 8px;
+    --r-md: 12px;
+    --r-lg: 18px;
+    --r-pill: 999px;
+    --shadow-sm: 0 1px 2px rgb(15 23 42 / 0.08);
+    --shadow-md: 0 4px 12px rgb(15 23 42 / 0.1);
+    --shadow-lg: 0 12px 32px rgb(15 23 42 / 0.16);
+
+    /* Objetivo tactil minimo recomendado (WCAG 2.5.5 / guidelines iOS-Android) */
+    --tap: 44px;
+
+    --font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #080d18;
+        --surface: #111a2e;
+        --surface-2: #17233c;
+        --border: #2b3a57;
+        --border-strong: #45566f;
+        --text: #f1f5f9;
+        --text-muted: #b4c2d6;
+
+        --brand-100: #16305c;
+        --brand-50: #10203a;
+
+        --ok-700: #4ade80;
+        --ok-100: #0d3b22;
+        --warn-700: #fbbf24;
+        --warn-100: #453007;
+        --danger-700: #f87171;
+        --danger-100: #45161a;
+        --info-700: #38bdf8;
+        --info-100: #0b3245;
+
+        --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.5);
+        --shadow-md: 0 4px 12px rgb(0 0 0 / 0.55);
+        --shadow-lg: 0 12px 32px rgb(0 0 0 / 0.65);
+    }
+}

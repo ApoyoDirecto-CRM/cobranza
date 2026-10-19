@@ -1,0 +1,38 @@
+{
+  "name": "@cobranza/api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "API REST de Cobranza: portal de clientes + panel administrativo",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test \"src/**/*.test.ts\"",
+    "db:migrate": "tsx src/db/migrate.ts up",
+    "db:seed": "tsx src/db/migrate.ts seed",
+    "db:reset": "tsx src/db/migrate.ts reset"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/cors": "11.3.1",
+    "@fastify/helmet": "13.2.0",
+    "@fastify/jwt": "10.2.4",
+    "@fastify/rate-limit": "11.2.1",
+    "@fastify/static": "10.1.6",
+    "@fastify/swagger": "9.9.2",
+    "@fastify/swagger-ui": "6.1.2",
+    "exceljs": "4.4.0",
+    "fastify": "5.12.7",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.10",
+    "@types/node": "24.10.1",
+    "@types/pg": "8.15.6",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3"
+  }
+}

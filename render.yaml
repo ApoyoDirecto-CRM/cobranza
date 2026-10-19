@@ -1,0 +1,114 @@
+# =============================================================================
+# COBRANZA - Blueprint para Render (plan gratuito, solo pruebas)
+#
+# Uso: dashboard.render.com -> New -> Blueprint -> apuntar a este repo.
+#
+# DECISION DE ARQUITECTURA: un solo web service sirve la API Y el frontend.
+# En plan gratuito cada servicio duerme a los 15 min y tarda ~1 min en
+# despertar, asi que dos servicios serian dos esperas en el arranque en frio.
+# Ademas, con uno solo: mismo origen (sin CORS), la cookie de refresh funciona
+# sin SameSite=None, y VITE_API_BASE_URL puede quedar en /api/v1 sin conocer de
+# antemano la URL final.
+#
+# LIMITACIONES DEL PLAN GRATUITO (ver README "Despliegue"):
+#   - La base EXPIRE A LOS 30 DIAS. Despues, 14 dias de gracia y Render BORRA
+#     los datos. Para pruebas esta bien; para produccion, no.
+#   - Sin disco persistente: solo la base sobrevive a un redespliegue.
+#   - `preDeployCommand` NO existe en plan gratuito, por eso AUTO_MIGRATE=true
+#     y las migraciones corren en cada arranque (son idempotentes).
+# =============================================================================
+
+databases:
+  - name: cobranza-db
+    databaseName: cobranza
+    # plan: free   -> 0.1 CPU / 256 MB / 1 GB, expira a los 30 dias
+    # plan: 0.5c-1g -> 15 GB, sin expiracion (7 USD/mes)
+    plan: free
+    postgresMajorVersion: "18"
+    # Vacio = solo conexiones internas de Render. Nadie desde internet entra
+    # directo a la base; solo la API lo hace.
+    ipAllowList: []
+
+services:
+  - type: web
+    name: cobranza
+    runtime: node
+    plan: free
+    region: oregon
+
+    # Monorepo: se instala y compila todo desde la raiz.
+    #
+    # `--include=dev` NO es opcional: mas abajo NODE_ENV=production, y con esa
+    # variable npm aplica omit=dev automaticamente. Sin el flag, `npm ci` no
+    # instala typescript ni tsx (devDependencies) y `npm run build` falla.
+    buildCommand: npm ci --include=dev && npm run build
+
+    # La API corre migraciones (AUTO_MIGRATE) y sirve tambien el frontend.
+    startCommand: npm start
+
+    # /health verifica la API Y la base de datos. Si la base cae, Render marca
+    # el servicio como no saludable en vez de enrutar trafico hacia el.
+    healthCheckPath: /health
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cobranza-db
+          property: connectionString
+
+      # Render arranca en 0.0.0.0 y elige el puerto en $PORT. No hace falta
+      # declararlo: config/env.ts usa API_PORT si existe y, si no, PORT.
+      - key: API_HOST
+        value: 0.0.0.0
+
+      # --- Secretos: Render los genera (base64 de 256 bits) y NO queda nada
+      # escrito en git. El arranque ABORTA si faltan o si son los de ejemplo.
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: WEBHOOK_SECRET
+        generateValue: true
+
+      # --- Portal: mismo origen, asi que no hay CORS que configurar.
+      # El portal y la API comparten dominio: /api/v1 relativo.
+      - key: VITE_API_BASE_URL
+        value: /api/v1
+      - key: CORS_ORIGINS
+        value: ""
+
+      # --- Despliegue
+      - key: AUTO_MIGRATE
+        value: "true"
+      # Inserta datos de demostracion SOLO si la base esta vacia.
+      # En cuanto haya datos reales, cambia esto a "false" y borralos a mano.
+      - key: SEED_ON_DEPLOY
+        value: "true"
+      - key: SERVE_WEB
+        value: "true"
+
+      # --- Limites del portal en un entorno compartido y publico.
+      # Bajados respecto a los valores locales: en la.free el servicio es
+      # alcanzable por cualquiera que conozca la URL.
+      - key: PORTAL_LOGIN_RATE_LIMIT
+        value: "5"
+      - key: PORTAL_MAX_FAILED_ATTEMPTS
+        value: "3"
+      - key: PORTAL_LOCKOUT_MINUTES
+        value: "30"
+
+      # --- Credenciales de la semilla (SOLO pruebas).
+      # En un despliegue real, cambialas desde el panel de Render y pon
+      # SEED_ON_DEPLOY=false: con la base ya sembrada, el seed no vuelve a correr.
+      - key: SEED_ADMIN_EMAIL
+        value: admin@cobranza.local
+      - key: SEED_ADMIN_PASSWORD
+        sync: false
+
+      # --- Pasarela de tarjetas: vacio, el boton de tarjeta responde con un
+      # error explicito y el cliente usa SPEI.
+      - key: GATEWAY_API_BASE
+        value: ""
