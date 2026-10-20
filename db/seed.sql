@@ -59,11 +59,14 @@ $$;
 -- ---------------------------------------------------------------------------
 -- 2. Cuentas receptoras (CLABE)
 --    Reemplaza estos datos por los reales de tu cuenta antes de producción.
+--    OJO: el titular es lo que el cliente VE en su app bancaria al transferir
+--    por SPEI. No se puede enmascarar: abre la cuenta a nombre de un negocio o
+--    marca, nunca de una persona. El valor de abajo es un demo generico.
 -- ---------------------------------------------------------------------------
 INSERT INTO payment_accounts (label, bank_name, clabe, holder, reference_tmpl)
 VALUES
     ('Cuenta principal', 'BBVA Bancomer', '012180001234567899',
-     'COBRANZA PRESTAMOS SA DE CV', 'FOLIO-{FOLIO}')
+     'CUENTA RECEPTORA DEMO', 'FOLIO-{FOLIO}')
 ON CONFLICT (clabe) DO UPDATE
     SET bank_name = EXCLUDED.bank_name,
         holder = EXCLUDED.holder,

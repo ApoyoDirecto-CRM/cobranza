@@ -429,10 +429,41 @@ para usuario inexistente y documento erróneo.
 - [ ] `NODE_ENV=production` (activa cookies `Secure`, apaga `/docs` y endurece
       el arranque)
 - [ ] `CORS_ORIGINS` limitado a los dominios reales
-- [ ] CLABE y cuenta receptora reales en `payment_accounts`
+- [ ] CLABE y cuenta receptora reales en `payment_accounts` (titular a nombre
+      de un negocio/marca: ver Blindaje del titular)
 - [ ] Contraseña del administrador cambiada (el seed lo advierte)
 - [ ] Copias de seguridad de PostgreSQL
 - [ ] `COMPLIANCE`: revisa si aplica la LFPDPPP
+
+### Blindaje del titular (que no te ubiquen por el servicio)
+
+Quien recibe una transferencia SPEI ve el **nombre del titular** de la cuenta;
+quien consulta el dominio ve los datos de **WHOIS**; y quien recibe el SMS ve el
+**remitente**. Nada de eso lo arregla el código: depende de **bajo qué
+identidad contratas cada pieza**. Checklist:
+
+- **Cuenta SPEI**: el cliente ve `holder` en su app bancaria al transferir
+  (`SPEI_TITULAR` / `payment_accounts.holder`). Ábrela a nombre de una
+  entidad, negocio o marca, **nunca a tu nombre personal**. No se puede
+  enmascarar: SPEI siempre muestra el titular.
+- **Correo del administrador**: usa una cuenta por rol/genérica
+  (p. ej. `sistema@<tu-dominio>`), no tu correo personal (`SEED_ADMIN_EMAIL`).
+  Es el que aparece en recuperaciones y notificaciones.
+- **Dominio**: regístralo con **privacidad WHOIS** y un correo de contacto
+  genérico. Con el subdominio de Render (`*.onrender.com`) no controlas el
+  WHOIS, pero tampoco expones el tuyo.
+- **SMS (OTP)**: remitente genérico y **número dedicado**, no tu celular
+  personal. En Twilio, `TWILIO_FROM` es visible para el destinatario.
+- **GitHub**: aloja el repo en una **organización**, no en tu cuenta personal.
+  Los commits ya usan una identidad genérica (`Cobranza Dev <dev@cobranza.local>`).
+- **Marca**: el título y los metadatos (`web/index.html`) usan el nombre
+  comercial del servicio, no tu nombre.
+- **Sin terceros**: el HTML no carga fuentes, analítica ni CDNs externos, y la
+  CSP (`default-src 'self'`) lo bloquea: ni Google ni nadie ve las visitas.
+- **Datos demo**: los nombres, CLABE y CURP del seed son ficticios. No metas
+  clientes reales en el seed ni en el repositorio.
+- **URL**: una instancia gratuita es alcanzable por quien conozca la URL (y su
+  base de datos expira a los 30 días). No la publiques.
 
 ---
 
