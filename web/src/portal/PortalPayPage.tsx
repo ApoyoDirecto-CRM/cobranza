@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+﻿import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import type { PaymentInstructions } from '../api/types';
@@ -106,6 +106,10 @@ export function PortalPayPage() {
     }
 
     const sinSaldo = data.pending.amount <= 0;
+    const spei = data.spei;
+    const speiAvailable = Boolean(spei);
+    const cardAvailable = data.card.available;
+    const effectiveTab: Tab = !speiAvailable ? 'tarjeta' : !cardAvailable ? 'spei' : tab;
 
     return (
         <div className="container page">
@@ -115,7 +119,7 @@ export function PortalPayPage() {
 
             {sinSaldo ? (
                 <div className="card">
-                    <EmptyState icon="🎉" title="No tienes saldo pendiente">
+                    <EmptyState icon="ðŸŽ‰" title="No tienes saldo pendiente">
                         Tu credito esta al corriente. No hay nada que pagar por ahora.
                     </EmptyState>
                     <button
@@ -161,39 +165,43 @@ export function PortalPayPage() {
                         ) : null}
                     </section>
 
-                    {/* Selector de metodo: dos pestañas grandes, pensadas para el dedo. */}
+                    {/* Selector de metodo: solo los metodos que el admin habilito. */}
                     <div
                         role="tablist"
                         aria-label="Metodo de pago"
                         className="row"
                         style={{ gap: 8, margin: '16px 0' }}
                     >
-                        <button
-                            role="tab"
-                            aria-selected={tab === 'spei'}
-                            className={`btn btn-block ${tab === 'spei' ? 'btn-primary' : 'btn-secondary'}`}
-                            onClick={() => setTab('spei')}
-                        >
-                            🏦 Transferencia SPEI
-                        </button>
-                        <button
-                            role="tab"
-                            aria-selected={tab === 'tarjeta'}
-                            className={`btn btn-block ${tab === 'tarjeta' ? 'btn-primary' : 'btn-secondary'}`}
-                            onClick={() => setTab('tarjeta')}
-                        >
-                            💳 Tarjeta
-                        </button>
+                        {speiAvailable ? (
+                            <button
+                                role="tab"
+                                aria-selected={effectiveTab === 'spei'}
+                                className={`btn btn-block ${effectiveTab === 'spei' ? 'btn-primary' : 'btn-secondary'}`}
+                                onClick={() => setTab('spei')}
+                            >
+                                ðŸ¦ Transferencia SPEI
+                            </button>
+                        ) : null}
+                        {cardAvailable ? (
+                            <button
+                                role="tab"
+                                aria-selected={effectiveTab === 'tarjeta'}
+                                className={`btn btn-block ${effectiveTab === 'tarjeta' ? 'btn-primary' : 'btn-secondary'}`}
+                                onClick={() => setTab('tarjeta')}
+                            >
+                                ðŸ’³ Tarjeta
+                            </button>
+                        ) : null}
                     </div>
 
-                    {tab === 'spei' ? (
+                    {effectiveTab === 'spei' && spei ? (
                         <section className="card" role="tabpanel" aria-label="Pago por transferencia">
                             <h2 style={{ marginBottom: 12 }}>Datos para tu transferencia</h2>
 
                             <div className="field">
                                 <label htmlFor="clabe">CLABE</label>
-                                <div className="clabe-box" id="clabe">{data.spei.clabe}</div>
-                                {!data.spei.clabeValid ? (
+                                <div className="clabe-box" id="clabe">{spei.clabe}</div>
+                                {!spei.clabeValid ? (
                                     <p className="field-error">
                                         Ojo: esta CLABE no supera la validacion del digito de control.
                                         Contacta a tu asesor antes de transferir.
@@ -202,20 +210,20 @@ export function PortalPayPage() {
                                 <button
                                     className="btn btn-secondary btn-sm btn-block"
                                     style={{ marginTop: 8 }}
-                                    onClick={() => void handleCopy(data.spei.clabe, 'CLABE')}
+                                    onClick={() => void handleCopy(spei.clabe, 'CLABE')}
                                 >
-                                    {copied === 'CLABE' ? '✓ Copiada' : 'Copiar CLABE'}
+                                    {copied === 'CLABE' ? 'âœ“ Copiada' : 'Copiar CLABE'}
                                 </button>
                             </div>
 
                             <div className="field">
                                 <label htmlFor="beneficiario">Beneficiario</label>
-                                <input id="beneficiario" value={data.spei.holder} readOnly />
+                                <input id="beneficiario" value={spei.holder} readOnly />
                             </div>
 
                             <div className="field">
                                 <label htmlFor="banco">Banco</label>
-                                <input id="banco" value={data.spei.bank} readOnly />
+                                <input id="banco" value={spei.bank} readOnly />
                             </div>
 
                             <div className="field">
@@ -223,16 +231,16 @@ export function PortalPayPage() {
                                 <div className="row" style={{ gap: 8 }}>
                                     <input
                                         id="concepto"
-                                        value={data.spei.reference}
+                                        value={spei.reference}
                                         readOnly
                                         className="mono"
                                         style={{ flex: 1, minWidth: 0 }}
                                     />
                                     <button
                                         className="btn btn-secondary btn-sm"
-                                        onClick={() => void handleCopy(data.spei.reference, 'Concepto')}
+                                        onClick={() => void handleCopy(spei.reference, 'Concepto')}
                                     >
-                                        {copied === 'Concepto' ? '✓' : 'Copiar'}
+                                        {copied === 'Concepto' ? 'âœ“' : 'Copiar'}
                                     </button>
                                 </div>
                                 <p className="field-hint">
@@ -243,7 +251,7 @@ export function PortalPayPage() {
 
                             <h3 style={{ margin: '20px 0 12px' }}>Como hacerlo</h3>
                             <ol className="steps">
-                                {data.spei.instructions.map((step) => (
+                                {spei.instructions.map((step) => (
                                     <li key={step}>{step}</li>
                                 ))}
                             </ol>
@@ -253,7 +261,7 @@ export function PortalPayPage() {
                                 el mismo dia habil. Conserva tu comprobante.
                             </Alert>
                         </section>
-                    ) : (
+                    ) : cardAvailable ? (
                         <section className="card" role="tabpanel" aria-label="Pago con tarjeta">
                             <h2 style={{ marginBottom: 12 }}>Pago con tarjeta</h2>
                             <p className="small muted" style={{ marginBottom: 16 }}>
@@ -293,11 +301,11 @@ export function PortalPayPage() {
                             </button>
 
                             <p className="small muted" style={{ marginTop: 16 }}>
-                                🔒 Tu tarjeta se procesa directamente con la pasarela. Este sistema nunca
+                                ðŸ”’ Tu tarjeta se procesa directamente con la pasarela. Este sistema nunca
                                 almacena el numero de tu tarjeta.
                             </p>
                         </section>
-                    )}
+                    ) : null}
                 </>
             )}
         </div>

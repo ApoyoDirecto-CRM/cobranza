@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { Queryable } from '../db/client.js';
 import { forbidden, unauthorized } from '../shared/errors.js';
+import { normalizePortalView, type PortalView } from '../shared/portalView.js';
 import { verifyAccessToken, type TokenType } from './tokens.js';
 
 export type AdminRole = 'admin' | 'supervisor' | 'operador' | 'lectura';
@@ -9,6 +10,8 @@ export interface ClientPrincipal {
     id: number;
     folio: string;
     fullName: string;
+    /** Secciones del portal que el admin habilito para este cliente. */
+    view: PortalView;
 }
 
 export interface AdminPrincipal {
@@ -53,9 +56,10 @@ export function requireClient(db: Queryable) {
 
         const result = await db.query<{
             id: string; folio: string; full_name: string;
-            status: string; portal_enabled: boolean; deleted_at: string | null;
+            status: string; portal_enabled: boolean; portal_view: unknown;
+            deleted_at: string | null;
         }>(
-            `SELECT id, folio, full_name, status, portal_enabled, deleted_at
+            `SELECT id, folio, full_name, status, portal_enabled, portal_view, deleted_at
                FROM clients WHERE id = $1`,
             [clientId]
         );
@@ -73,6 +77,7 @@ export function requireClient(db: Queryable) {
             id: Number(client.id),
             folio: client.folio,
             fullName: client.full_name,
+            view: normalizePortalView(client.portal_view),
         };
     };
 }

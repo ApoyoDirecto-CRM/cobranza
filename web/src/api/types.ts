@@ -38,6 +38,7 @@ export interface PlanView {
 }
 
 export interface Summary {
+    view: PortalView;
     client: {
         folio: string;
         fullName: string;
@@ -61,7 +62,7 @@ export interface Summary {
         lastPaidAt: string | null;
         isLiquidated: boolean;
         hasOverdue: boolean;
-    };
+    } | null;
     plans: PlanView[];
     paymentAccount: { bank: string; clabe: string; holder: string } | null;
 }
@@ -121,9 +122,41 @@ export interface PaymentInstructions {
         clabeValid: boolean;
         instructions: string[];
         deadlineHours: number;
-    };
+    } | null;
     card: { available: boolean; description: string };
 }
+
+/** Secciones del portal que el admin habilita por cliente. */
+export const PORTAL_SECTIONS = [
+    'summary',
+    'plans',
+    'installments',
+    'payments',
+    'paymentInstructions',
+    'card',
+] as const;
+
+export type PortalSection = (typeof PORTAL_SECTIONS)[number];
+
+export type PortalView = Record<PortalSection, boolean>;
+
+export const PORTAL_SECTION_LABELS: Record<PortalSection, string> = {
+    summary: 'Resumen de saldos',
+    plans: 'Mis creditos',
+    installments: 'Calendario de cuotas',
+    payments: 'Historial de pagos',
+    paymentInstructions: 'Ficha de pago (SPEI)',
+    card: 'Pago con tarjeta',
+};
+
+export const ALL_SECTIONS_VISIBLE: PortalView = {
+    summary: true,
+    plans: true,
+    installments: true,
+    payments: true,
+    paymentInstructions: true,
+    card: true,
+};
 
 export interface Dashboard {
     totals: {
@@ -154,4 +187,6 @@ export interface PortfolioClient {
     maxDaysOverdue: number | null;
     nextDueDate: string | null;
     lastPaidAt: string | null;
+    portalEnabled: boolean;
+    portalView: PortalView;
 }

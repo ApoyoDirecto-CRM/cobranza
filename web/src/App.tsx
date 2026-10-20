@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from 'react';
 import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuth } from './auth/AuthContext';
+import type { PortalView } from './api/types';
 import { Loading } from './components/ui';
 import { PortalLoginPage } from './portal/PortalLoginPage';
 import { PortalDashboardPage } from './portal/PortalDashboardPage';
@@ -42,11 +43,53 @@ function RequireAuth({
 }
 
 const TABS = [
-    { to: '/portal', label: 'Inicio', icon: '🏠', end: true },
-    { to: '/portal/cuotas', label: 'Cuotas', icon: '🗓', end: false },
-    { to: '/portal/pagos', label: 'Pagos', icon: '🧾', end: false },
-    { to: '/portal/pagar', label: 'Pagar', icon: '💳', end: false },
+    { to: '/portal', label: 'Inicio', icon: '🏠', end: true, visible: (v: PortalView) => v.summary || v.plans },
+    { to: '/portal/cuotas', label: 'Cuotas', icon: '🗓', end: false, visible: (v: PortalView) => v.installments },
+    { to: '/portal/pagos', label: 'Pagos', icon: '🧾', end: false, visible: (v: PortalView) => v.payments },
+    { to: '/portal/pagar', label: 'Pagar', icon: '💳', end: false, visible: (v: PortalView) => v.paymentInstructions || v.card },
 ];
+
+/**
+ * Primer destino que el cliente SI puede ver. Si el admin le oculto la
+ * seccion actual, se le lleva aqui en vez de dejarlo en una pantalla muerta.
+ * Devuelve null cuando el admin no le dejo ninguna seccion.
+ */
+function firstVisiblePath(view: PortalView): string | null {
+    return TABS.find((tab) => tab.visible(view))?.to ?? null;
+}
+
+/** Bloquea una ruta del portal cuya seccion el admin deshabilito. */
+function RequirePortalSection({
+    visible,
+    children,
+}: {
+    visible: (view: PortalView) => boolean;
+    children: ReactNode;
+}) {
+    const { portalUser } = useAuth();
+    if (!portalUser) return null;
+    if (!visible(portalUser.view)) {
+        const fallback = firstVisiblePath(portalUser.view);
+        return fallback ? <Navigate to={fallback} replace /> : <PortalNoAccess />;
+    }
+    return <>{children}</>;
+}
+
+function PortalNoAccess() {
+    const { logout } = useAuth();
+    return (
+        <div className="container page">
+            <div className="card empty-state">
+                <div className="icon" aria-hidden="true">🔒</div>
+                <h1>Sin secciones habilitadas</h1>
+                <p>Tu asesor aun no habilito ninguna seccion del portal. Contactalo para mas informacion.</p>
+                <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => void logout()}>
+                    Salir
+                </button>
+            </div>
+        </div>
+    );
+}
 
 const ADMIN_TABS = [
     { to: '/admin', label: 'Cartera', icon: '📊', end: true },
@@ -84,7 +127,7 @@ function PortalLayout({ children }: { children: ReactNode }) {
             <main className="page">{children}</main>
 
             <nav className="tabbar" aria-label="Navegacion principal">
-                {TABS.map((tab) => (
+                {TABS.filter((tab) => portalUser && tab.visible(portalUser.view)).map((tab) => (
                     <NavLink key={tab.to} to={tab.to} end={tab.end}>
                         <span className="tab-icon" aria-hidden="true">{tab.icon}</span>
                         {tab.label}
@@ -155,7 +198,9 @@ export default function App() {
                 element={
                     <RequireAuth kind="client">
                         <PortalLayout>
-                            <PortalDashboardPage />
+                            <RequirePortalSection visible={(v) => v.summary || v.plans}>
+                                <PortalDashboardPage />
+                            </RequirePortalSection>
                         </PortalLayout>
                     </RequireAuth>
                 }
@@ -165,7 +210,9 @@ export default function App() {
                 element={
                     <RequireAuth kind="client">
                         <PortalLayout>
-                            <PortalInstallmentsPage />
+                            <RequirePortalSection visible={(v) => v.installments}>
+                                <PortalInstallmentsPage />
+                            </RequirePortalSection>
                         </PortalLayout>
                     </RequireAuth>
                 }
@@ -175,7 +222,9 @@ export default function App() {
                 element={
                     <RequireAuth kind="client">
                         <PortalLayout>
-                            <PortalPaymentsPage />
+                            <RequirePortalSection visible={(v) => v.payments}>
+                                <PortalPaymentsPage />
+                            </RequirePortalSection>
                         </PortalLayout>
                     </RequireAuth>
                 }
@@ -185,7 +234,9 @@ export default function App() {
                 element={
                     <RequireAuth kind="client">
                         <PortalLayout>
-                            <PortalPayPage />
+                            <RequirePortalSection visible={(v) => v.paymentInstructions || v.card}>
+                                <PortalPayPage />
+                            </RequirePortalSection>
                         </PortalLayout>
                     </RequireAuth>
                 }

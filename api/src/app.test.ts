@@ -364,6 +364,125 @@ describe('Resumen del portal', () => {
     });
 });
 
+describe('Vista configurable del portal', () => {
+    // Un solo login para toda la suite: /admin/auth/login tiene su propio
+    // limite (10/min) y el archivo ya lo consume en otras suites.
+    let admin: string;
+
+    before(async () => {
+        admin = await loginAdmin();
+    });
+
+    async function clientId(): Promise<number> {
+        const res = await harness.db.query<{ id: string }>(
+            'SELECT id FROM clients WHERE phone = $1', [CLIENT.phone]
+        );
+        const row = res.rows[0];
+        assert.ok(row, 'el cliente sembrado debe existir');
+        return Number(row.id);
+    }
+
+    async function setView(
+        token: string, id: number, portalView: Record<string, boolean>
+    ): Promise<unknown> {
+        const res = await app.inject({
+            method: 'PATCH', url: `/api/v1/admin/clients/${id}`,
+            headers: { authorization: `Bearer ${token}` },
+            payload: { portalView },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        return res.json();
+    }
+
+    it('por defecto todas las secciones son visibles', async () => {
+        const token = await loginClient();
+        const res = await app.inject({
+            method: 'GET', url: '/api/v1/portal/summary',
+            headers: { authorization: `Bearer ${token}` },
+        });
+        assert.deepEqual(res.json().view, {
+            summary: true, plans: true, installments: true,
+            payments: true, paymentInstructions: true, card: true,
+        });
+    });
+
+    it('el admin puede ocultar secciones y el portal las respeta', async () => {
+        const id = await clientId();
+        try {
+            await setView(admin, id, { installments: false, payments: false, summary: false });
+
+            const token = await loginClient();
+            const body = (await app.inject({
+                method: 'GET', url: '/api/v1/portal/summary',
+                headers: { authorization: `Bearer ${token}` },
+            })).json();
+            assert.equal(body.totals, null, 'los totales no deben viajar si el resumen esta oculto');
+            assert.ok(body.plans.length > 0, 'los planes siguen visibles');
+            assert.equal(body.view.summary, false);
+
+            for (const url of ['/api/v1/portal/installments', '/api/v1/portal/payments']) {
+                const res = await app.inject({
+                    method: 'GET', url, headers: { authorization: `Bearer ${token}` },
+                });
+                assert.equal(res.statusCode, 403, `${url}: ${res.body}`);
+            }
+        } finally {
+            await setView(admin, id, { installments: true, payments: true, summary: true });
+        }
+    });
+
+    it('ocultar la ficha SPEI no bloquea la tarjeta y al reves', async () => {
+        const id = await clientId();
+        try {
+            await setView(admin, id, { paymentInstructions: false });
+            const token = await loginClient();
+
+            const res = await app.inject({
+                method: 'GET', url: '/api/v1/portal/payment-instructions',
+                headers: { authorization: `Bearer ${token}` },
+            });
+            assert.equal(res.statusCode, 200, res.body);
+            const body = res.json();
+            assert.equal(body.spei, null, 'sin ficha de pago no debe viajar la CLABE');
+            assert.equal(body.card.available, true);
+
+            await setView(admin, id, { card: false });
+            const cardRes = await app.inject({
+                method: 'POST', url: '/api/v1/portal/payments/card-session',
+                headers: { authorization: `Bearer ${token}` },
+                payload: { amount: '100.00' },
+            });
+            assert.equal(cardRes.statusCode, 403, cardRes.body);
+
+            await setView(admin, id, { paymentInstructions: false, card: false });
+            const both = await app.inject({
+                method: 'GET', url: '/api/v1/portal/payment-instructions',
+                headers: { authorization: `Bearer ${token}` },
+            });
+            assert.equal(both.statusCode, 403, both.body);
+        } finally {
+            await setView(admin, id, { paymentInstructions: true, card: true });
+        }
+    });
+
+    it('rechaza secciones desconocidas y valores que no son boolean', async () => {
+        const id = await clientId();
+        const desconocida = await app.inject({
+            method: 'PATCH', url: `/api/v1/admin/clients/${id}`,
+            headers: { authorization: `Bearer ${admin}` },
+            payload: { portalView: { resumen: false } },
+        });
+        assert.equal(desconocida.statusCode, 400, desconocida.body);
+
+        const noBooleano = await app.inject({
+            method: 'PATCH', url: `/api/v1/admin/clients/${id}`,
+            headers: { authorization: `Bearer ${admin}` },
+            payload: { portalView: { summary: 'si' } },
+        });
+        assert.equal(noBooleano.statusCode, 400, noBooleano.body);
+    });
+});
+
 describe('Gestion de cartera (admin)', () => {
     it('el dashboard agrega la cartera completa', async () => {
         const token = await loginAdmin();

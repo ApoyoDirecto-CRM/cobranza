@@ -173,6 +173,11 @@ CREATE TABLE clients (
     status              client_status NOT NULL DEFAULT 'activo',
     -- Bloquea el acceso al portal sin afectar la gestion interna.
     portal_enabled      BOOLEAN NOT NULL DEFAULT TRUE,
+    -- Que secciones ve el cliente en el portal. El admin lo edita por cliente;
+    -- una clave ausente se interpreta como visible (ver api/src/shared/portalView.ts).
+    portal_view         JSONB NOT NULL DEFAULT
+                        '{"summary":true,"plans":true,"installments":true,"payments":true,"paymentInstructions":true,"card":true}'::jsonb
+                        CHECK (jsonb_typeof(portal_view) = 'object'),
 
     -- Cuenta SPEI asignada (CLABE que el cliente debe usar).
     payment_account_id  BIGINT REFERENCES payment_accounts(id)
@@ -724,6 +729,7 @@ SELECT
     c.email,
     c.status,
     c.portal_enabled,
+    c.portal_view,
     c.registered_at,
     a.clabe                         AS spei_clabe,
     a.bank_name                     AS spei_bank,

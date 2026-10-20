@@ -256,6 +256,22 @@ enteros. `Number(x) * 100` —el error clásico— no aparece en ninguna parte d
 código: `100 * 0.29` da `28.999999999999996` en IEEE-754, y en una cartera de
 mañanas eso es un descuadre de centavos que nadie sabe explicar.
 
+### Visibilidad del portal por cliente
+
+El admin decide, cliente por cliente, **qué secciones ve el titular**. La
+configuración vive en una sola columna JSONB (`clients.portal_view`):
+`summary`, `plans`, `installments`, `payments`, `paymentInstructions` y
+`card`. Se edita desde el panel (botón *Vista del portal* en cada cliente) o
+por `PATCH /admin/clients/:id` con `{ "portalView": { "payments": false } }`;
+el parche se **fusiona** con lo actual, así que se puede ocultar una sección
+sin reenviar las demás.
+
+La clave ausente se interpreta como **visible**: una fila antigua o un `{}` a
+medio construir no oculta nada por accidente. El modo seguro exige escribir
+`false` a propósito. El backend no se fía de la UI: cada endpoint del portal
+revalida la sección (`/portal/installments` → `403` si está oculta; el resumen
+sencillamente omite `totals` o los planes ocultos, para no enviar el dato).
+
 ---
 
 ## API
@@ -284,7 +300,7 @@ Base: `/api/v1` · OpenAPI en `/docs`
 | `GET` | `/admin/dashboard` | lectura | KPIs y antigüedad de cartera |
 | `GET` | `/admin/clients` | lectura | Lista con búsqueda y filtro || `GET` | `/admin/clients/:id` | lectura | Ficha completa con planes y pagos |
 | `POST` | `/admin/clients` | operador | **Alta de cliente** |
-| `PATCH` | `/admin/clients/:id` | operador | Estado, contacto, CLABE |
+| `PATCH` | `/admin/clients/:id` | operador | Estado, contacto, CLABE y visibilidad del portal |
 | `POST` | `/admin/clients/:id/plans` | operador | **Asigna plan y genera cuotas** |
 | `GET` | `/admin/plans` | lectura | Lista de planes |
 | `POST` | `/admin/plans/:id/cancel` | supervisor | Cancela un plan |

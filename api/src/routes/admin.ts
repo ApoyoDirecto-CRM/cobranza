@@ -5,6 +5,7 @@ import { withTransaction } from '../db/client.js';
 import { buildSchedule } from '../domain/schedule.js';
 import { centsToNumeric, centsToNumber, formatCurrency, numericToCents, parseAmountToCents } from '../shared/money.js';
 import { fingerprintIdentity, hashIdentity, maskIdentity, normalizeEmail, normalizePhone, normalizeReference, validateIdentity, ValidationError } from '../shared/identity.js';
+import { applyPortalViewPatch, normalizePortalView, parsePortalViewPatch } from '../shared/portalView.js';
 import { badRequest, conflict, forbidden, notFound } from '../shared/errors.js';
 import { isPgUniqueViolation } from '../shared/errors.js';
 import { recordPayment, reversePayment, writeAudit, approvePayment, type PaymentMethod } from '../services/payments.js';
@@ -268,10 +269,12 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
                 paid_amount: string; pending_amount: string; overdue_amount: string;
                 max_days_overdue: number | null; next_due_date: string | null;
                 last_paid_at: string | null; spei_clabe: string | null;
+                portal_enabled: boolean; portal_view: unknown;
             }>(
                 `SELECT client_id, folio, full_name, phone, status, active_plans,
                         financed_amount, paid_amount, pending_amount, overdue_amount,
-                        max_days_overdue, next_due_date, last_paid_at, spei_clabe
+                        max_days_overdue, next_due_date, last_paid_at, spei_clabe,
+                        portal_enabled, portal_view
                    FROM v_client_portfolio
                    ${where}
                   ORDER BY overdue_amount DESC NULLS LAST, full_name
@@ -300,6 +303,8 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
                     maxDaysOverdue: row.max_days_overdue === null ? null : Number(row.max_days_overdue),
                     nextDueDate: row.next_due_date,
                     lastPaidAt: row.last_paid_at,
+                    portalEnabled: row.portal_enabled,
+                    portalView: normalizePortalView(row.portal_view),
                 })),
                 pagination: {
                     limit,
@@ -332,12 +337,12 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
                 id: string; folio: string; full_name: string; phone: string; phone_alt: string | null;
                 email: string | null; identity_type: string; identity_masked: string;
                 address_line: string | null; notes: string | null; status: string;
-                portal_enabled: boolean; registered_at: string; clabe: string | null;
-                bank_name: string | null;
+                portal_enabled: boolean; portal_view: unknown; registered_at: string;
+                clabe: string | null; bank_name: string | null;
             }>(
                 `SELECT c.id, c.folio, c.full_name, c.phone, c.phone_alt, c.email,
                         c.identity_type, c.identity_masked, c.address_line, c.notes, c.status,
-                        c.portal_enabled, c.registered_at, a.clabe, a.bank_name
+                        c.portal_enabled, c.portal_view, c.registered_at, a.clabe, a.bank_name
                    FROM clients c
                    LEFT JOIN payment_accounts a ON a.id = c.payment_account_id
                   WHERE c.id = $1 AND c.deleted_at IS NULL`,
@@ -375,6 +380,7 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
                     notes: row.notes,
                     status: row.status,
                     portalEnabled: row.portal_enabled,
+                    portalView: normalizePortalView(row.portal_view),
                     registeredAt: row.registered_at,
                     speiClabe: row.clabe,
                     speiBank: row.bank_name,
@@ -515,7 +521,10 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
 
     app.patch<{
         Params: { id: string };
-        Body: { status?: string; portalEnabled?: boolean; email?: string; notes?: string; paymentAccountId?: number };
+        Body: {
+            status?: string; portalEnabled?: boolean; email?: string; notes?: string;
+            paymentAccountId?: number; portalView?: Record<string, boolean>;
+        };
     }>(
         '/admin/clients/:id',
         {
@@ -531,6 +540,14 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
                         email: { type: 'string', maxLength: 120 },
                         notes: { type: 'string', maxLength: 2000 },
                         paymentAccountId: { type: 'integer' },
+                        portalView: {
+                            type: 'object',
+                            additionalProperties: { type: 'boolean' },
+                            description:
+                                'Secciones del portal que ve el cliente. Claves: ' +
+                                'summary, plans, installments, payments, ' +
+                                'paymentInstructions, card. Se fusiona con lo actual.',
+                        },
                     },
                 },
             },
@@ -566,11 +583,29 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
                 sets.push(`payment_account_id = $${params.length}`);
             }
 
+            let nextView: ReturnType<typeof normalizePortalView> | null = null;
+            if (body.portalView !== undefined) {
+                let patch;
+                try {
+                    patch = parsePortalViewPatch(body.portalView);
+                } catch (error) {
+                    rethrowValidation(error);
+                }
+                const current = await db.query<{ portal_view: unknown }>(
+                    `SELECT portal_view FROM clients WHERE id = $1 AND deleted_at IS NULL`,
+                    [id]
+                );
+                if (!current.rows[0]) throw notFound('Cliente no encontrado');
+                nextView = applyPortalViewPatch(current.rows[0].portal_view, patch);
+                params.push(JSON.stringify(nextView));
+                sets.push(`portal_view = $${params.length}::jsonb`);
+            }
+
             if (sets.length === 0) throw badRequest('No enviaste ningun campo a actualizar');
 
-            const result = await db.query<{ id: string }>(
+            const result = await db.query<{ id: string; portal_view: unknown }>(
                 `UPDATE clients SET ${sets.join(', ')} WHERE id = $1 AND deleted_at IS NULL
-                 RETURNING id`,
+                 RETURNING id, portal_view`,
                 params
             );
             if (!result.rows[0]) throw notFound('Cliente no encontrado');
@@ -584,7 +619,11 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
                 ip: request.ip,
             });
 
-            return { id, updated: true };
+            return {
+                id,
+                updated: true,
+                portalView: normalizePortalView(result.rows[0].portal_view),
+            };
         }
     );
 

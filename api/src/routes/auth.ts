@@ -8,6 +8,7 @@ import {
     verifyIdentity,
     ValidationError,
 } from '../shared/identity.js';
+import { normalizePortalView } from '../shared/portalView.js';
 import {
     generateRefreshToken,
     persistRefreshToken,
@@ -161,9 +162,9 @@ export async function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps): 
 
             const found = await db.query<{
                 id: string; folio: string; full_name: string;
-                identity_hash: string; identity_masked: string;
+                identity_hash: string; identity_masked: string; portal_view: unknown;
             }>(
-                `SELECT id, folio, full_name, identity_hash, identity_masked
+                `SELECT id, folio, full_name, identity_hash, identity_masked, portal_view
                    FROM clients WHERE phone = $1 AND deleted_at IS NULL`,
                 [phone]
             );
@@ -190,7 +191,12 @@ export async function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps): 
                     refreshToken,
                     expiresIn: config.auth.accessTtl,
                     tokenType: 'Bearer',
-                    client: { id: clientId, folio: client.folio, fullName: client.full_name },
+                    client: {
+                        id: clientId,
+                        folio: client.folio,
+                        fullName: client.full_name,
+                        view: normalizePortalView(client.portal_view),
+                    },
                 };
             }
 
@@ -257,8 +263,8 @@ export async function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps): 
                 );
             }
 
-            const found = await db.query<{ id: string; folio: string; full_name: string }>(
-                `SELECT id, folio, full_name
+            const found = await db.query<{ id: string; folio: string; full_name: string; portal_view: unknown }>(
+                `SELECT id, folio, full_name, portal_view
                    FROM clients WHERE phone = $1 AND deleted_at IS NULL`,
                 [phone]
             );
@@ -295,7 +301,12 @@ export async function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps): 
                 refreshToken,
                 expiresIn: config.auth.accessTtl,
                 tokenType: 'Bearer',
-                client: { id: clientId, folio: client.folio, fullName: client.full_name },
+                client: {
+                    id: clientId,
+                    folio: client.folio,
+                    fullName: client.full_name,
+                    view: normalizePortalView(client.portal_view),
+                },
             };
         }
     );
@@ -374,6 +385,7 @@ export async function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps): 
                 fullName: row?.full_name ?? '',
                 phone: row?.phone ?? '',
                 email: row?.email ?? null,
+                view: request.client!.view,
             };
         }
     );

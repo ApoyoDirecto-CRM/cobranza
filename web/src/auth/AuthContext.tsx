@@ -8,11 +8,13 @@ import {
     type ReactNode,
 } from 'react';
 import { api, setAccessToken, getAccessToken } from '../api/client';
+import type { PortalView } from '../api/types';
 
 export interface PortalUser {
     id: number;
     folio: string;
     fullName: string;
+    view: PortalView;
 }
 
 export interface AdminUser {
@@ -61,9 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         (async () => {
             try {
-                const me = await api.get<{ id: number; folio: string; fullName: string }>(
-                    '/auth/me'
-                );
+                const me = await api.get<PortalUser>('/auth/me');
                 if (!cancelled) setPortalUser(me);
             } catch {
                 // Sin sesion de portal: es el estado normal de arranque.
@@ -82,7 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             otpRequired: boolean;
             challenge?: string;
             accessToken?: string;
-            client?: { id: number; folio: string; fullName: string };
+            client?: { id: number; folio: string; fullName: string; view: PortalView };
         }>('/auth/login', { phone, identityId });
 
         if (!data.otpRequired && data.accessToken && data.client) {

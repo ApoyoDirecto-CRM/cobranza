@@ -3,7 +3,7 @@ import { config } from '../config/env.js';
 import type { Queryable } from '../db/client.js';
 import { buildProgress, consolidateProgress, type PlanProgress } from '../domain/progress.js';
 import { centsToNumber, formatCurrency, numericToCents, parseAmountToCents } from '../shared/money.js';
-import { badRequest, notFound } from '../shared/errors.js';
+import { badRequest, forbidden, notFound } from '../shared/errors.js';
 
 export interface PortalDeps {
     db: Queryable;
@@ -62,6 +62,7 @@ export async function registerPortalRoutes(app: FastifyInstance, deps: PortalDep
         },
         async (request) => {
             const clientId = request.client!.id;
+            const view = request.client!.view;
 
             const clientRow = await db.query<{
                 folio: string; full_name: string; status: string; email: string | null;
@@ -109,6 +110,9 @@ export async function registerPortalRoutes(app: FastifyInstance, deps: PortalDep
             );
 
             return {
+                // El cliente necesita saber que puede ver para pintar la nav; el
+                // dato ya viene del guard, no se consulta de nuevo.
+                view,
                 client: {
                     folio: client.folio,
                     fullName: client.full_name,
@@ -117,7 +121,7 @@ export async function registerPortalRoutes(app: FastifyInstance, deps: PortalDep
                     identity: client.identity_masked,
                     identityType: client.identity_type,
                 },
-                totals: {
+                totals: view.summary ? {
                     total: money(consolidated.total),
                     paid: money(consolidated.paid),
                     pending: money(consolidated.pending),
@@ -132,8 +136,8 @@ export async function registerPortalRoutes(app: FastifyInstance, deps: PortalDep
                     lastPaidAt: consolidated.lastPaidAt,
                     isLiquidated: consolidated.isLiquidated,
                     hasOverdue: consolidated.hasOverdue,
-                },
-                plans: plans.map(({ row, progress }) => ({
+                } : null,
+                plans: !view.plans ? [] : plans.map(({ row, progress }) => ({
                     id: Number(row.plan_id),
                     reference: row.reference,
                     productName: row.product_name ?? 'Plan de cobranza',
@@ -156,7 +160,7 @@ export async function registerPortalRoutes(app: FastifyInstance, deps: PortalDep
                     lastPaidAt: progress.lastPaidAt,
                     isLiquidated: progress.isLiquidated,
                 })),
-                paymentAccount: accountResult.rows[0]
+                paymentAccount: view.paymentInstructions && accountResult.rows[0]
                     ? {
                         bank: accountResult.rows[0].bank_name,
                         clabe: accountResult.rows[0].clabe,
@@ -194,6 +198,9 @@ export async function registerPortalRoutes(app: FastifyInstance, deps: PortalDep
         },
         async (request) => {
             const clientId = request.client!.id;
+            if (!request.client!.view.installments) {
+                throw forbidden('El calendario de cuotas no esta disponible. Contacta a tu asesor.');
+            }
             const { status = 'todos', limit = 50, offset = 0 } = request.query;
 
             // "vencido" no existe en el ENUM: se filtra por estado + fecha.
@@ -272,6 +279,9 @@ export async function registerPortalRoutes(app: FastifyInstance, deps: PortalDep
         },
         async (request) => {
             const clientId = request.client!.id;
+            if (!request.client!.view.payments) {
+                throw forbidden('El historial de pagos no esta disponible. Contacta a tu asesor.');
+            }
             const { status = 'todos', limit = 20, offset = 0 } = request.query;
             const filtered = status !== 'todos';
 
@@ -335,6 +345,10 @@ export async function registerPortalRoutes(app: FastifyInstance, deps: PortalDep
         },
         async (request) => {
             const clientId = request.client!.id;
+            const view = request.client!.view;
+            if (!view.paymentInstructions && !view.card) {
+                throw forbidden('La ficha de pago no esta disponible. Contacta a tu asesor.');
+            }
 
             const accountResult = await db.query<{
                 clabe: string; bank_name: string; holder: string; reference_tmpl: string;
@@ -345,7 +359,7 @@ export async function registerPortalRoutes(app: FastifyInstance, deps: PortalDep
                 [clientId]
             );
             const account = accountResult.rows[0];
-            if (!account) {
+            if (view.paymentInstructions && !account) {
                 throw notFound(
                     'Tu credito aun no tiene una CLABE asignada. Contacta a tu asesor para recibirla.'
                 );
@@ -375,7 +389,8 @@ export async function registerPortalRoutes(app: FastifyInstance, deps: PortalDep
             const pendingCents = numericToCents(due?.pending_amount);
 
             const folio = request.client!.folio;
-            const reference = account.reference_tmpl.replace('{FOLIO}', folio);
+            const showSpei = view.paymentInstructions && Boolean(account);
+            const reference = showSpei ? account!.reference_tmpl.replace('{FOLIO}', folio) : '';
 
             return {
                 pending: money(pendingCents),
@@ -384,26 +399,26 @@ export async function registerPortalRoutes(app: FastifyInstance, deps: PortalDep
                 nextDueDate: due?.next_due_date ?? null,
                 overdueInstallments: due?.overdue_count ?? 0,
                 pendingInstallments: due?.pending_count ?? 0,
-                spei: {
-                    bank: account.bank_name,
-                    clabe: account.clabe,
-                    holder: account.holder,
+                spei: showSpei ? {
+                    bank: account!.bank_name,
+                    clabe: account!.clabe,
+                    holder: account!.holder,
                     reference,
                     concept: `Pago de credito folio ${folio}`,
                     // Detecta un error de captura del numero antes de transferir.
-                    clabeValid: isValidClabe(account.clabe),
+                    clabeValid: isValidClabe(account!.clabe),
                     instructions: [
                         'Abre tu banca en linea o la aplicacion de tu banco.',
                         'Elige "Transferencia" o "SPEI".',
-                        `Captura la CLABE ${account.clabe}.`,
+                        `Captura la CLABE ${account!.clabe}.`,
                         `Captura el monto exacto de ${formatCurrency(pendingCents)}.`,
                         `En concepto escribe: ${reference}`,
                         'Guarda el comprobante: queda registrado en tu historial.',
                     ],
                     deadlineHours: config.spei.deadlineHours,
-                },
+                } : null,
                 card: {
-                    available: true,
+                    available: view.card,
                     description:
                         'Pago con tarjeta. Se procesa al instante y el saldo se actualiza ' +
                         'en cuanto la pasarela confirme la operacion.',
@@ -439,6 +454,9 @@ export async function registerPortalRoutes(app: FastifyInstance, deps: PortalDep
         },
         async (request) => {
             const clientId = request.client!.id;
+            if (!request.client!.view.card) {
+                throw forbidden('El pago con tarjeta no esta disponible. Contacta a tu asesor.');
+            }
             const body = request.body ?? {};
 
             let amountCents: number;

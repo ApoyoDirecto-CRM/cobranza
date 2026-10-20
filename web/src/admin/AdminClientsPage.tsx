@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { api, ApiError } from '../api/client';
-import type { Paginated, PortfolioClient } from '../api/types';
+import {
+    PORTAL_SECTIONS,
+    PORTAL_SECTION_LABELS,
+    type Paginated,
+    type PortalView,
+    type PortfolioClient,
+} from '../api/types';
 import { Alert, Badge, EmptyState, SkeletonCard } from '../components/ui';
 import { formatDate, formatPhone } from '../lib/format';
 
@@ -70,6 +76,9 @@ export function AdminClientsPage() {
     const [form, setForm] = useState<FormState>(EMPTY_FORM);
     const [saving, setSaving] = useState(false);
     const [created, setCreated] = useState<{ id: number; folio: string } | null>(null);
+    const [viewFor, setViewFor] = useState<number | null>(null);
+    const [viewDraft, setViewDraft] = useState<PortalView | null>(null);
+    const [viewSaving, setViewSaving] = useState(false);
 
     const load = useCallback(async (search: string) => {
         setLoading(true);
@@ -147,6 +156,35 @@ export function AdminClientsPage() {
 
     const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
         setForm((prev) => ({ ...prev, [key]: value }));
+
+    const openView = (client: PortfolioClient) => {
+        setViewFor((current) => (current === client.id ? null : client.id));
+        setViewDraft({ ...client.portalView });
+    };
+
+    const saveView = async (client: PortfolioClient) => {
+        if (!viewDraft) return;
+        setViewSaving(true);
+        setError(null);
+        try {
+            const result = await api.patch<{ portalView: PortalView }>(
+                `/admin/clients/${client.id}`,
+                { portalView: viewDraft }
+            );
+            setClients((prev) =>
+                prev.map((item) =>
+                    item.id === client.id ? { ...item, portalView: result.portalView } : item
+                )
+            );
+            setViewFor(null);
+            setViewDraft(null);
+            setNotice(`Vista del portal actualizada para ${client.fullName}.`);
+        } catch (err) {
+            setError(err instanceof ApiError ? err.message : 'No pudimos guardar la vista del portal.');
+        } finally {
+            setViewSaving(false);
+        }
+    };
 
     return (
         <div className="container page">
@@ -307,6 +345,62 @@ export function AdminClientsPage() {
                                         {client.activePlans === 1 ? 'plan activo' : 'planes activos'}
                                     </div>
                                 </div>
+                                <button
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => openView(client)}
+                                >
+                                    {viewFor === client.id ? 'Cerrar' : 'Vista del portal'}
+                                </button>
+                                {viewFor === client.id && viewDraft ? (
+                                    <div
+                                        className="grow"
+                                        style={{
+                                            flexBasis: '100%',
+                                            marginTop: 12,
+                                            borderTop: '1px solid var(--border)',
+                                            paddingTop: 12,
+                                        }}
+                                    >
+                                        <p className="small muted" style={{ marginBottom: 8 }}>
+                                            Elige que secciones ve {client.fullName.split(' ')[0]} en su portal.
+                                        </p>
+                                        <div className="grid grid-2">
+                                            {PORTAL_SECTIONS.map((section) => (
+                                                <label
+                                                    key={section}
+                                                    className="row"
+                                                    style={{ gap: 8, alignItems: 'center' }}
+                                                >
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={viewDraft[section]}
+                                                        onChange={(e) =>
+                                                            setViewDraft((prev) => prev
+                                                                ? { ...prev, [section]: e.target.checked }
+                                                                : prev)
+                                                        }
+                                                    />
+                                                    {PORTAL_SECTION_LABELS[section]}
+                                                </label>
+                                            ))}
+                                        </div>
+                                        <div className="row" style={{ gap: 8, marginTop: 12 }}>
+                                            <button
+                                                className="btn btn-primary btn-sm"
+                                                disabled={viewSaving}
+                                                onClick={() => void saveView(client)}
+                                            >
+                                                {viewSaving ? 'Guardando…' : 'Guardar vista'}
+                                            </button>
+                                            <button
+                                                className="btn btn-secondary btn-sm"
+                                                onClick={() => { setViewFor(null); setViewDraft(null); }}
+                                            >
+                                                Cancelar
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : null}
                             </li>
                         ))}
                     </ul>
