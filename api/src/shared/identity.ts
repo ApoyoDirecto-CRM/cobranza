@@ -6,6 +6,10 @@
  * la ultima linea de defensa, no la primera.
  */
 
+import bcrypt from 'bcryptjs';
+import { createHash } from 'node:crypto';
+import { config } from '../config/env.js';
+
 export type IdentityType = 'curp' | 'dni';
 
 export class ValidationError extends Error {
@@ -107,6 +111,43 @@ export function validateIdentity(input: string): { type: IdentityType; value: st
         throw new ValidationError('identityId', 'La fecha de la CURP no es valida');
     }
     return { type, value };
+}
+
+/**
+ * Hash bcrypt del documento. Se usa cost 10: suficiente para frenar fuerza
+ * bruta sobre un identificador de baja entropia (CURP/DNI) sin penalizar el
+ * login normal. El hash vive en `clients.identity_hash`; el documento en texto
+ * plano nunca se guarda ni se loguea.
+ */
+export function hashIdentity(value: string): Promise<string> {
+    return bcrypt.hash(value, 10);
+}
+
+/**
+ * Indice ciego para detectar documentos duplicados sin guardar el documento.
+ *
+ * SHA-256(pepper + documento). El pepper es un secreto del servidor: sin el,
+ * un dump permitiria confirmar CURPs candidatas al instante. Debe coincidir
+ * con la expresion SQL de `db/seed.sql` (`cobranza.identity_pepper`).
+ */
+export function fingerprintIdentity(value: string): string {
+    return createHash('sha256')
+        .update(config.auth.identityPepper + value, 'utf8')
+        .digest('hex');
+}
+
+/**
+ * Verifica el documento contra el hash almacenado. Se ejecuta en Node, no en
+ * SQL: comparar en SQL filtraria, por tiempos, si el documento existia aunque
+ * el mensaje de error fuera identico.
+ *
+ * Cuando el telefono no existe se compara contra un hash ficticio para que el
+ * tiempo de respuesta sea indistinguible del de un telefono registrado con
+ * documento incorrecto (no se filtra cuales numeros estan de alta).
+ */
+export async function verifyIdentity(value: string, hash: string | undefined): Promise<boolean> {
+    const stored = hash ?? '$2b$10$invalidinvalidinvalidinvalidinvalidinvalidinvalidinv';
+    return bcrypt.compare(value, stored);
 }
 
 /** Comparacion en tiempo constante para no filtrar el documento por tiempos. */

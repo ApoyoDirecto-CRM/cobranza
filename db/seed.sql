@@ -10,6 +10,21 @@
 BEGIN;
 
 -- ---------------------------------------------------------------------------
+-- 0. Pepper del indice ciego de identidad
+--    El migrador lo fija via `SET cobranza.identity_pepper` antes de este
+--    archivo (ver api/src/db/migrator.ts). Al ejecutar a mano con psql hay que
+--    fijarlo primero: SET cobranza.identity_pepper = '...';
+--    Debe coincidir exactamente con IDENTITY_PEPPER del servidor.
+-- ---------------------------------------------------------------------------
+DO $$
+BEGIN
+    IF current_setting('cobranza.identity_pepper', TRUE) IS NULL THEN
+        RAISE EXCEPTION 'Falta cobranza.identity_pepper: fijalo con SET antes de seed.sql';
+    END IF;
+END;
+$$;
+
+-- ---------------------------------------------------------------------------
 -- 1. Usuario administrador
 --    La contrasena se define con SEED_ADMIN_PASSWORD o, si no esta, una de
 --    desarrollo. En produicion DEBES cambiarla en el primer acceso.
@@ -76,9 +91,13 @@ BEGIN
     -- movimiento real y no solo ceros.
     SELECT id INTO v_maria_id FROM clients WHERE folio = 'CLI-0001';
     IF v_maria_id IS NULL THEN
-        INSERT INTO clients (folio, full_name, phone, identity_type, identity_id,
-                             email, payment_account_id)
-        VALUES ('CLI-0001', 'Maria Lopez Ruiz', '5512345678', 'curp', 'GODE561231GRERRN09',
+        INSERT INTO clients (folio, full_name, phone, identity_type, identity_hash,
+                             identity_masked, identity_fingerprint, email, payment_account_id)
+        VALUES ('CLI-0001', 'Maria Lopez Ruiz', '5512345678', 'curp',
+                '$2b$10$aSaKh4/OZPIwxtdBS5TWD.4qN0L4z6SSvXkPY0Aa/xXyLQ.3BT1gG',
+                'GODE**********RN09',
+                encode(sha256(convert_to(
+                    current_setting('cobranza.identity_pepper') || 'GODE561231GRERRN09', 'UTF8')), 'hex'),
                 'maria.lopez@example.com', v_principal)
         RETURNING id INTO v_maria_id;
     END IF;
@@ -88,9 +107,13 @@ BEGIN
     -- cuenta para transferir" del portal.
     SELECT id INTO v_pedro_id FROM clients WHERE folio = 'CLI-0002';
     IF v_pedro_id IS NULL THEN
-        INSERT INTO clients (folio, full_name, phone, identity_type, identity_id,
-                             email, payment_account_id)
-        VALUES ('CLI-0002', 'Pedro Gomez Diaz', '5599999999', 'dni', '1234567890123',
+        INSERT INTO clients (folio, full_name, phone, identity_type, identity_hash,
+                             identity_masked, identity_fingerprint, email, payment_account_id)
+        VALUES ('CLI-0002', 'Pedro Gomez Diaz', '5599999999', 'dni',
+                '$2b$10$RN5U3qKy8WR/ORAceTvEu.DinRXZvi98wOj8P7sl2ke6xNsigjEAK',
+                '1234*****0123',
+                encode(sha256(convert_to(
+                    current_setting('cobranza.identity_pepper') || '1234567890123', 'UTF8')), 'hex'),
                 'pedro.gomez@example.com', NULL)
         RETURNING id INTO v_pedro_id;
     END IF;
@@ -98,9 +121,13 @@ BEGIN
     -- Cliente con plan ya liquidado.
     SELECT id INTO v_ana_id FROM clients WHERE folio = 'CLI-0003';
     IF v_ana_id IS NULL THEN
-        INSERT INTO clients (folio, full_name, phone, identity_type, identity_id,
-                             email, payment_account_id)
-        VALUES ('CLI-0003', 'Ana Torres Vega', '5544556677', 'curp', 'PEMG900215HDFRNS03',
+        INSERT INTO clients (folio, full_name, phone, identity_type, identity_hash,
+                             identity_masked, identity_fingerprint, email, payment_account_id)
+        VALUES ('CLI-0003', 'Ana Torres Vega', '5544556677', 'curp',
+                '$2b$10$r6CKM0qyyXEaHrF68M1g3.wQd9wvbgg1dqnz0dwy4cqbW1z3hK58q',
+                'PEMG**********NS03',
+                encode(sha256(convert_to(
+                    current_setting('cobranza.identity_pepper') || 'PEMG900215HDFRNS03', 'UTF8')), 'hex'),
                 'ana.torres@example.com', NULL)
         RETURNING id INTO v_ana_id;
     END IF;

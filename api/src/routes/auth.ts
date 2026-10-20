@@ -4,8 +4,8 @@ import type { Queryable } from '../db/client.js';
 import { AppError, badRequest, unauthorized } from '../shared/errors.js';
 import {
     normalizePhone,
-    safeEqual,
     validateIdentity,
+    verifyIdentity,
     ValidationError,
 } from '../shared/identity.js';
 import {
@@ -15,6 +15,8 @@ import {
     rotateRefreshToken,
     signAccessToken,
 } from '../auth/tokens.js';
+import bcrypt from 'bcryptjs';
+import { randomInt } from 'node:crypto';
 
 /**
  * AVISO DE SEGURIDAD (leer antes de desplegar)
@@ -157,19 +159,17 @@ export async function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps): 
                 );
             }
 
-            // Se busca solo por telefono y la comparacion del documento se hace
-            // aqui en tiempo constante: comparar en SQL filtraria, por tiempos,
-            // si el documento existia aunque el error fuera identico.
             const found = await db.query<{
-                id: string; folio: string; full_name: string; identity_id: string;
+                id: string; folio: string; full_name: string;
+                identity_hash: string; identity_masked: string;
             }>(
-                `SELECT id, folio, full_name, identity_id
+                `SELECT id, folio, full_name, identity_hash, identity_masked
                    FROM clients WHERE phone = $1 AND deleted_at IS NULL`,
                 [phone]
             );
             const client = found.rows[0];
 
-            if (!client || !safeEqual(client.identity_id, identity.value)) {
+            if (!client || !(await verifyIdentity(identity.value, client.identity_hash))) {
                 throw unauthorized('Telefono o documento incorrecto');
             }
 
@@ -180,9 +180,114 @@ export async function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps): 
             );
 
             const clientId = Number(client.id);
+
+            if (!config.auth.otpEnabled) {
+                const refreshToken = generateRefreshToken();
+                await persistRefreshToken(db, 'client', clientId, refreshToken, requestMeta(request));
+                setRefreshCookie(reply, refreshToken);
+                return {
+                    accessToken: signAccessToken(app, clientId, 'client'),
+                    refreshToken,
+                    expiresIn: config.auth.accessTtl,
+                    tokenType: 'Bearer',
+                    client: { id: clientId, folio: client.folio, fullName: client.full_name },
+                };
+            }
+
+            const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+            const codeHash = await bcrypt.hash(code, 10);
+            const ttlSeconds = config.auth.otpTtlMinutes * 60;
+            await db.query(
+                `INSERT INTO otp_codes (client_id, code_hash, expires_at)
+                 VALUES ($1, $2, now() + ($3 || ' seconds')::interval)`,
+                [clientId, codeHash, String(ttlSeconds)]
+            );
+
+            if (config.auth.otpProvider === 'twilio') {
+                const { sendSms } = await import('../services/otp.js');
+                await sendSms(phone, code);
+            } else {
+                app.log.warn(`[OTP] codigo para ${phone}: ${code}`);
+            }
+
+            return {
+                otpRequired: true,
+                expiresIn: ttlSeconds,
+            };
+        }
+    );
+
+    // -------------------------------------------------------------------------
+    // POST /api/v1/auth/verify-otp
+    // -------------------------------------------------------------------------
+    app.post<{ Body: { phone: string; code: string } }>(
+        '/auth/verify-otp',
+        {
+            config: {
+                rateLimit: { max: config.auth.portalLoginRateLimit, timeWindow: '1 minute' },
+            },
+            schema: {
+                tags: ['Portal - Autenticacion'],
+                summary: 'Verifica el OTP y emite tokens',
+                body: {
+                    type: 'object',
+                    required: ['phone', 'code'],
+                    properties: {
+                        phone: { type: 'string', minLength: 10, maxLength: 20 },
+                        code: { type: 'string', minLength: 6, maxLength: 6 },
+                    },
+                },
+            },
+        },
+        async (request, reply) => {
+            const { phone: rawPhone, code } = request.body;
+
+            let phone: string;
+            try {
+                phone = normalizePhone(rawPhone);
+            } catch {
+                throw badRequest('Telefono invalido', { field: 'phone' });
+            }
+
+            const failed = await registerFailure(db, phone, request.ip, 'otp');
+            if (failed > config.auth.portalMaxFailedAttempts) {
+                throw new AppError(
+                    'ACCOUNT_LOCKED',
+                    `Demasiados intentos fallidos. Intenta de nuevo en ${config.auth.portalLockoutMinutes} minutos.`
+                );
+            }
+
+            const found = await db.query<{ id: string; folio: string; full_name: string }>(
+                `SELECT id, folio, full_name
+                   FROM clients WHERE phone = $1 AND deleted_at IS NULL`,
+                [phone]
+            );
+            const client = found.rows[0];
+            if (!client) throw unauthorized('Codigo incorrecto');
+
+            // El codigo se busca para ESE cliente: nunca "el ultimo OTP global".
+            // Sin este filtro cualquier telefono validaria contra el OTP de otro.
+            const row = await db.query<{ id: string; code_hash: string }>(
+                `SELECT id, code_hash
+                   FROM otp_codes
+                  WHERE client_id = $1 AND consumed_at IS NULL AND expires_at > now()
+                  ORDER BY created_at DESC LIMIT 1`,
+                [client.id]
+            );
+            const record = row.rows[0];
+
+            if (!record || !(await bcrypt.compare(code, record.code_hash))) {
+                throw unauthorized('Codigo incorrecto');
+            }
+
+            await db.query(
+                `UPDATE otp_codes SET consumed_at = now() WHERE id = $1`,
+                [record.id]
+            );
+
+            const clientId = Number(client.id);
             const refreshToken = generateRefreshToken();
             await persistRefreshToken(db, 'client', clientId, refreshToken, requestMeta(request));
-
             setRefreshCookie(reply, refreshToken);
 
             return {

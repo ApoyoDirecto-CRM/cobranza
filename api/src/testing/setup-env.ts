@@ -24,6 +24,10 @@ const defaults: Record<string, string> = {
     // El seed debe honrar esta variable (ver db/migrator.ts). Se fija aqui para
     // que la prueba pueda comprobar que NO queda la contrasena de desarrollo.
     SEED_ADMIN_PASSWORD: 'ClaveDePruebaAdmin123!',
+    // OTP desactivado en las suites de integracion: el flujo OTP tiene su
+    // propia prueba en security.test.ts. Aqui el login debe comportarse como
+    // antes para no romper las 80+ pruebas existentes.
+    PORTAL_OTP_ENABLED: 'false',
 };
 
 for (const [key, value] of Object.entries(defaults)) {

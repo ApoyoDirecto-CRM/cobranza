@@ -152,9 +152,18 @@ CREATE TABLE clients (
     -- 10 digitos, sin clave de pais ni formato. Se normaliza a solo digitos.
     phone               CHAR(10) NOT NULL UNIQUE CHECK (phone ~ '^[0-9]{10}$'),
     identity_type       identity_type NOT NULL,
-    -- CURP (18 alfanumericos) o DNI/INE (13 digitos), en mayusculas y sin
-    -- espacios. Se normaliza en la capa de aplicacion.
-    identity_id         VARCHAR(18) NOT NULL UNIQUE CHECK (identity_id ~ '^[A-Z0-9]{13,18}$'),
+    -- CURP (18) o DNI (13) hasheada con bcrypt (cost 10). Nunca se guarda el
+    -- documento en texto plano: es PII sensible (LFPDPPP). El login compara
+    -- en Node con bcrypt.compare, no en SQL, para no filtrar por tiempos.
+    identity_hash       TEXT NOT NULL,
+    -- Version enmascarada para mostrar en el portal/admin: 4 primeros + 8
+    -- asteriscos + 4 ultimos caracteres. Ej: GODE**********RN09.
+    identity_masked     TEXT NOT NULL,
+    -- Indice ciego SHA-256(pepper + documento): permite un UNIQUE para
+    -- rechazar documentos duplicados sin guardar el documento ni comparar
+    -- bcrypt en SQL. El pepper es un secreto del servidor (IDENTITY_PEPPER).
+    identity_fingerprint CHAR(64) NOT NULL UNIQUE
+                            CHECK (identity_fingerprint ~ '^[0-9a-f]{64}$'),
     email               CITEXT CHECK (email IS NULL OR
                             email ~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$'),
     phone_alt           CHAR(10) CHECK (phone_alt IS NULL OR phone_alt ~ '^[0-9]{10}$'),
@@ -172,12 +181,7 @@ CREATE TABLE clients (
     registered_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    deleted_at          TIMESTAMPTZ,           -- baja logica
-
-    CONSTRAINT clients_identity_ck CHECK (
-        (identity_type = 'curp' AND identity_id ~ '^[A-Z0-9]{18}$')
-     OR (identity_type = 'dni'  AND identity_id ~ '^[0-9]{13}$')
-    )
+    deleted_at          TIMESTAMPTZ           -- baja logica
 );
 
 CREATE TRIGGER clients_updated_at
@@ -197,6 +201,19 @@ CREATE INDEX clients_account_idx       ON clients (payment_account_id)
 --    edita en montos una vez que tiene pagos aplicados: se cancela y se crea
 --    uno nuevo, conservando la trazabilidad.
 -- ---------------------------------------------------------------------------
+
+-- Codigos OTP del portal. Se guarda solo el hash bcrypt del codigo; nunca el
+-- codigo en texto plano. Un codigo es de un solo uso y expira en minutos.
+CREATE TABLE otp_codes (
+    id          BIGSERIAL PRIMARY KEY,
+    client_id   BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    code_hash   TEXT NOT NULL,
+    expires_at  TIMESTAMPTZ NOT NULL,
+    consumed_at TIMESTAMPTZ,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX otp_codes_client_idx ON otp_codes(client_id)
+    WHERE consumed_at IS NULL;
 
 CREATE TABLE plans (
     id                  BIGSERIAL PRIMARY KEY,
@@ -703,7 +720,7 @@ SELECT
     c.full_name,
     c.phone,
     c.identity_type,
-    c.identity_id,
+    c.identity_masked,
     c.email,
     c.status,
     c.portal_enabled,

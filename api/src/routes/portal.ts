@@ -3,7 +3,6 @@ import { config } from '../config/env.js';
 import type { Queryable } from '../db/client.js';
 import { buildProgress, consolidateProgress, type PlanProgress } from '../domain/progress.js';
 import { centsToNumber, formatCurrency, numericToCents, parseAmountToCents } from '../shared/money.js';
-import { maskIdentity } from '../shared/identity.js';
 import { badRequest, notFound } from '../shared/errors.js';
 
 export interface PortalDeps {
@@ -66,9 +65,9 @@ export async function registerPortalRoutes(app: FastifyInstance, deps: PortalDep
 
             const clientRow = await db.query<{
                 folio: string; full_name: string; status: string; email: string | null;
-                identity_id: string; identity_type: string;
+                identity_hash: string; identity_masked: string; identity_type: string;
             }>(
-                `SELECT folio, full_name, status, email, identity_id, identity_type
+                `SELECT folio, full_name, status, email, identity_hash, identity_masked, identity_type
                    FROM clients WHERE id = $1`,
                 [clientId]
             );
@@ -115,7 +114,7 @@ export async function registerPortalRoutes(app: FastifyInstance, deps: PortalDep
                     fullName: client.full_name,
                     email: client.email,
                     status: client.status,
-                    identity: maskIdentity(client.identity_id),
+                    identity: client.identity_masked,
                     identityType: client.identity_type,
                 },
                 totals: {

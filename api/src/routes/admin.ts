@@ -4,7 +4,7 @@ import type { Queryable } from '../db/client.js';
 import { withTransaction } from '../db/client.js';
 import { buildSchedule } from '../domain/schedule.js';
 import { centsToNumeric, centsToNumber, formatCurrency, numericToCents, parseAmountToCents } from '../shared/money.js';
-import { normalizeEmail, normalizePhone, normalizeReference, validateIdentity, ValidationError } from '../shared/identity.js';
+import { fingerprintIdentity, hashIdentity, maskIdentity, normalizeEmail, normalizePhone, normalizeReference, validateIdentity, ValidationError } from '../shared/identity.js';
 import { badRequest, conflict, forbidden, notFound } from '../shared/errors.js';
 import { isPgUniqueViolation } from '../shared/errors.js';
 import { recordPayment, reversePayment, writeAudit, approvePayment, type PaymentMethod } from '../services/payments.js';
@@ -330,13 +330,13 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
 
             const client = await db.query<{
                 id: string; folio: string; full_name: string; phone: string; phone_alt: string | null;
-                email: string | null; identity_type: string; identity_id: string;
+                email: string | null; identity_type: string; identity_masked: string;
                 address_line: string | null; notes: string | null; status: string;
                 portal_enabled: boolean; registered_at: string; clabe: string | null;
                 bank_name: string | null;
             }>(
                 `SELECT c.id, c.folio, c.full_name, c.phone, c.phone_alt, c.email,
-                        c.identity_type, c.identity_id, c.address_line, c.notes, c.status,
+                        c.identity_type, c.identity_masked, c.address_line, c.notes, c.status,
                         c.portal_enabled, c.registered_at, a.clabe, a.bank_name
                    FROM clients c
                    LEFT JOIN payment_accounts a ON a.id = c.payment_account_id
@@ -370,7 +370,7 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
                     phoneAlt: row.phone_alt,
                     email: row.email,
                     identityType: row.identity_type,
-                    identityId: row.identity_id,
+                    identityMasked: row.identity_masked,
                     address: row.address_line,
                     notes: row.notes,
                     status: row.status,
@@ -463,11 +463,13 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
             }
 
             try {
+                const identityHash = await hashIdentity(identity.value);
                 const created = await db.query<{ id: string; folio: string }>(
                     `INSERT INTO clients
                        (folio, full_name, phone, phone_alt, email, identity_type,
-                        identity_id, address_line, notes, payment_account_id)
-                     VALUES ($1,$2,$3,$4,$5,$6::identity_type,$7,$8,$9,$10)
+                        identity_hash, identity_masked, identity_fingerprint,
+                        address_line, notes, payment_account_id)
+                     VALUES ($1,$2,$3,$4,$5,$6::identity_type,$7,$8,$9,$10,$11,$12)
                      RETURNING id, folio`,
                     [
                         body.folio?.trim() || `CLI-${Date.now().toString(36).toUpperCase()}`,
@@ -476,7 +478,9 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
                         phoneAlt,
                         email,
                         identity.type,
-                        identity.value,
+                        identityHash,
+                        maskIdentity(identity.value),
+                        fingerprintIdentity(identity.value),
                         body.address?.trim() ?? null,
                         body.notes?.trim() ?? null,
                         body.paymentAccountId ?? null,
@@ -499,7 +503,7 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
                     if (error.constraint === 'clients_phone_key') {
                         throw conflict('Ya existe un cliente registrado con ese telefono');
                     }
-                    if (error.constraint === 'clients_identity_id_key') {
+                    if (error.constraint === 'clients_identity_fingerprint_key') {
                         throw conflict('Ya existe un cliente registrado con ese documento');
                     }
                     throw conflict('El folio ya esta en uso');

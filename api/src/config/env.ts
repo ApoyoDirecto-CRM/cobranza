@@ -120,6 +120,15 @@ for (const name of [
     }
 }
 
+const identityPepper = str('IDENTITY_PEPPER', 'dev_identity_pepper_cambiar_en_produccion');
+if (isProduction && (identityPepper.length < 32 ||
+    identityPepper === 'dev_identity_pepper_cambiar_en_produccion' ||
+    identityPepper.startsWith('cambiame'))) {
+    throw new ConfigError(
+        'IDENTITY_PEPPER debe ser un secreto propio de al menos 32 caracteres en produccion.'
+    );
+}
+
 const accessSecret = required('JWT_ACCESS_SECRET');
 const refreshSecret = required('JWT_REFRESH_SECRET');
 if (accessSecret === refreshSecret) {
@@ -219,6 +228,17 @@ export const config = {
         portalLoginRateLimit: int('PORTAL_LOGIN_RATE_LIMIT', 10),
         seedAdminEmail: str('SEED_ADMIN_EMAIL', 'admin@cobranza.local'),
         seedAdminPassword: str('SEED_ADMIN_PASSWORD', ''),
+        /**
+         * Pepper del indice ciego de identidad. El documento se guarda hasheado
+         * con bcrypt (lento, para login) y ademas con SHA-256(pepper + doc)
+         * para detectar duplicados con un UNIQUE. Sin el pepper, un dump de la
+         * base permitiria enumerar CURPs conocidas por SHA-256 en milisegundos.
+         * En produccion debe ser un valor propio y secreto.
+         */
+        identityPepper,
+        otpEnabled: str('PORTAL_OTP_ENABLED', 'true') === 'true',
+        otpProvider: str('PORTAL_OTP_PROVIDER', 'console'),
+        otpTtlMinutes: int('PORTAL_OTP_TTL_MINUTES', 5),
     },
 
     webhook: {

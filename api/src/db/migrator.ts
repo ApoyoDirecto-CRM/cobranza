@@ -30,7 +30,13 @@ interface Migration {
     file: string;
 }
 
-const MIGRATIONS: Migration[] = [{ version: '001', file: 'schema.sql' }];
+const MIGRATIONS: Migration[] = [
+    { version: '001', file: 'schema.sql' },
+    // 002 se ejecuta solo como script manual sobre bases existentes (ver
+    // db/migrations/002-clients-identity-hash.sql): PGlite no soporta pgcrypto
+    // crypt() y Render despliega desde cero, donde schema.sql ya crea
+    // identity_hash/identity_masked directamente.
+];
 
 /**
  * Clave del advisory lock. Es arbitraria pero fija: serializa a todos los
@@ -69,6 +75,7 @@ async function ensureRegistry(db: Queryable): Promise<void> {
 function seedPrelude(): string {
     const literal = (value: string): string => `'${value.replace(/'/g, "''")}'`;
     const settings = [`SET cobranza.seed_email = ${literal(config.auth.seedAdminEmail)};`];
+    settings.push(`SET cobranza.identity_pepper = ${literal(config.auth.identityPepper)};`);
     if (config.auth.seedAdminPassword !== '') {
         settings.push(`SET cobranza.seed_password = ${literal(config.auth.seedAdminPassword)};`);
     }

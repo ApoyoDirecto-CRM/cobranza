@@ -125,6 +125,11 @@ npm run dev          # API en :3000 y web en :5173
 El seed crea tres clientes: uno al corriente, uno con atraso y uno liquidado,
 para que los reportes tengan datos con los que trabajar desde el primer minuto.
 
+> Con `PORTAL_OTP_ENABLED=true` (por defecto) el portal pide además un código de
+> 6 dígitos. En desarrollo (`PORTAL_OTP_PROVIDER=console`) aparece en la consola
+> del servidor como `[OTP] codigo para 5512345678: 123456`. Para probar sin ese
+> paso, pon `PORTAL_OTP_ENABLED=false` en `.env`.
+
 ---
 
 ## Probar en local sin Docker (PGlite)
@@ -366,37 +371,66 @@ orden de las claves y la firma no coincidiría.
 | CSV injection | Valores que empiezan por `=`, `+`, `-` o `@` se neutralizan (Excel ejecutaría fórmulas) |
 | Webhook falso | HMAC + ventana temporal + `timingSafeEqual` |
 | Pagos duplicados | Constraint único `(provider, provider_payment_id)` + tabla de idempotencia |
-| Fuga de datos personales | El documento se enmascara en el portal (`GODE**********RN09`); el PAN nunca pasa por la API |
+| Fuga de datos personales | El documento **nunca se guarda en texto plano**: se guarda bcrypt (`identity_hash`), una versión enmascarada (`identity_masked`) y un índice ciego SHA-256 con pepper (`identity_fingerprint`) para detectar duplicados; el PAN nunca pasa por la API |
 | Enumeración de usuarios | Mismo mensaje y tiempo de respuesta exista o no el registro |
 | Dinero sobre-aplicado | Triggers en base (§4 del modelo de datos) |
+| Swagger expuesto | `/docs` solo se registra fuera de producción |
+| Clickjacking / XSS de terceros | Helmet con CSP (`default-src 'self'`, sin `object`/`frame`, `base-uri` y `form-action` propios) |
+| Suplantación con un par filtrado | **OTP por SMS** de un solo uso, con TTL y hash bcrypt en `otp_codes` |
+
+### Portal: login en dos pasos (OTP)
+
+Con `PORTAL_OTP_ENABLED=true` (por defecto) `/auth/login` **no emite tokens**:
+valida teléfono + CURP/DNI, genera un código de 6 dígitos y responde
+`{ otpRequired: true, expiresIn }`. El cliente llama a `/auth/verify-otp`
+(`{ phone, code }`) y ahí recibe los tokens.
+
+- El código se guarda **hasheado** (bcrypt) en `otp_codes`, con TTL de
+  `PORTAL_OTP_TTL_MINUTES` y un solo uso.
+- `PORTAL_OTP_PROVIDER=console` imprime el código en el log (desarrollo). Para
+  producción usa `twilio` y define `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` y
+  `TWILIO_FROM`.
+- El login de administración **no** usa OTP: tiene contraseña propia y roles.
+
+### Documento del cliente (CURP/DNI)
+
+- `identity_hash`: bcrypt cost 10, se compara en Node (`bcrypt.compare`), nunca
+  en SQL, para no filtrar por tiempos.
+- `identity_fingerprint`: `SHA-256(IDENTITY_PEPPER + documento)` con `UNIQUE`.
+  Es lo que permite rechazar un documento duplicado sin guardar el documento.
+  **`IDENTITY_PEPPER` debe fijarse antes del primer despliegue**; rotarlo
+  invalida la detección de duplicados de los clientes ya existentes.
+- `identity_masked`: 4 primeros + asteriscos + 4 últimos, lo único que ve el
+  portal/admin.
 
 ### ⚠️ Limitación conocida del login del portal
 
-El acceso del cliente es **teléfono + CURP/DNI**. Eso **no es autenticación
-criptográfica**: es una declaración de identidad que el sistema acepta porque el
-titular ya le es conocido a la institución que le concedió el crédito.
+El primer factor del acceso del cliente es **teléfono + CURP/DNI**. Eso **no es
+autenticación criptográfica**: es una declaración de identidad que el sistema
+acepta porque el titular ya le es conocido a la institución que le concedió el
+crédito. El OTP es lo que convierte ese par en una prueba de posesión del
+teléfono.
 
-**Riesgo asumido:** quien conozca el par puede ver saldos y registrar pagos. Se
-asume que ese par no es público y que el contacto se verificó al contratar.
+**Riesgo residual:** si el atacante controla o intercepta el SMS y además
+conoce el par, puede entrar. Sin OTP el riesgo era simplemente conocer el par.
 
 **Mitigaciones aplicadas:** las de la tabla anterior, más respuestas idénticas
 para usuario inexistente y documento erróneo.
-
-**Upgrade recomendado:** sustituir este paso por un **OTP por SMS o WhatsApp**.
-El resto del flujo —tokens, sesiones, guardas, portal— no cambia; solo el
-endpoint `/auth/login`. Es el punto de extensión natural, y por eso está aislado
-en `routes/auth.ts`.
 
 ### Antes de producción
 
 - [ ] `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` y `WEBHOOK_SECRET` con valores
       aleatorios distintos (el arranque **falla** si se quedan los de ejemplo)
+- [ ] `IDENTITY_PEPPER` propio, secreto y de al menos 32 caracteres (el arranque
+      **falla** en producción con el valor de ejemplo)
+- [ ] `PORTAL_OTP_ENABLED=true` y `PORTAL_OTP_PROVIDER=twilio` con credenciales
+      reales (dejar `console` en producción imprime códigos en los logs)
 - [ ] `sslmode=require` en `DATABASE_URL`
-- [ ] `NODE_ENV=production` (activa cookies `Secure` y endurece el arranque)
+- [ ] `NODE_ENV=production` (activa cookies `Secure`, apaga `/docs` y endurece
+      el arranque)
 - [ ] `CORS_ORIGINS` limitado a los dominios reales
 - [ ] CLABE y cuenta receptora reales en `payment_accounts`
 - [ ] Contraseña del administrador cambiada (el seed lo advierte)
-- [ ] Migración a OTP en `/auth/login`
 - [ ] Copias de seguridad de PostgreSQL
 - [ ] `COMPLIANCE`: revisa si aplica la LFPDPPP
 

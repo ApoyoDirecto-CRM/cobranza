@@ -26,7 +26,8 @@ interface AuthState {
     portalUser: PortalUser | null;
     adminUser: AdminUser | null;
     loading: boolean;
-    loginPortal: (phone: string, identityId: string) => Promise<void>;
+    loginPortal: (phone: string, identityId: string) => Promise<{ otpRequired: boolean; challenge?: string }>;
+    verifyOtp: (phone: string, code: string) => Promise<void>;
     loginAdmin: (email: string, password: string) => Promise<void>;
     logout: () => Promise<void>;
 }
@@ -76,13 +77,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
     }, []);
 
-    const loginPortal = useCallback(async (phone: string, identityId: string) => {
+    const loginPortal = useCallback(async (phone: string, identityId: string): Promise<{ otpRequired: boolean; challenge?: string }> => {
         const data = await api.post<{
-            accessToken: string;
-            client: { id: number; folio: string; fullName: string };
+            otpRequired: boolean;
+            challenge?: string;
+            accessToken?: string;
+            client?: { id: number; folio: string; fullName: string };
         }>('/auth/login', { phone, identityId });
 
+        if (!data.otpRequired && data.accessToken && data.client) {
+            setAccessToken(data.accessToken);
+            setPortalUser(data.client);
+        }
+
+        return { otpRequired: data.otpRequired, challenge: data.challenge };
+    }, []);
+
+    const verifyOtp = useCallback(async (phone: string, code: string): Promise<void> => {
+        const data = await api.post<{
+            accessToken: string;
+            refreshToken: string;
+            client: PortalUser;
+        }>('/auth/verify-otp', { phone, code });
+
         setAccessToken(data.accessToken);
+        // Sin esto, RequireAuth no ve sesion y devuelve al login justo despues
+        // de un OTP correcto.
         setPortalUser(data.client);
     }, []);
 
@@ -97,8 +117,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, []);
 
     const value = useMemo<AuthState>(
-        () => ({ portalUser, adminUser, loading, loginPortal, loginAdmin, logout }),
-        [portalUser, adminUser, loading, loginPortal, loginAdmin, logout]
+        () => ({ portalUser, adminUser, loading, loginPortal, verifyOtp, loginAdmin, logout }),
+        [portalUser, adminUser, loading, loginPortal, verifyOtp, loginAdmin, logout]
     );
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

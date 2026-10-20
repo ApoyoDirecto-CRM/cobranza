@@ -72,6 +72,10 @@ services:
         generateValue: true
       - key: WEBHOOK_SECRET
         generateValue: true
+      # Pepper del indice ciego de CURP/DNI. Se genera una vez; NO rotarlo:
+      # los clientes existentes dejarian de detectarse como duplicados.
+      - key: IDENTITY_PEPPER
+        generateValue: true
 
       # --- Portal: mismo origen, asi que no hay CORS que configurar.
       # El portal y la API comparten dominio: /api/v1 relativo.
@@ -99,6 +103,15 @@ services:
         value: "3"
       - key: PORTAL_LOCKOUT_MINUTES
         value: "30"
+
+      # --- OTP del portal.
+      # console imprime el codigo en los logs de Render: sirve para la demo,
+      # pero cualquiera con acceso a los logs podria leerlo. Para uso real,
+      # cambia a "twilio" y define TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN/TWILIO_FROM.
+      - key: PORTAL_OTP_ENABLED
+        value: "true"
+      - key: PORTAL_OTP_PROVIDER
+        value: "console"
 
       # --- Credenciales de la semilla (SOLO pruebas).
       # En un despliegue real, cambialas desde el panel de Render y pon

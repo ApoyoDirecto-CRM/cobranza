@@ -6,6 +6,7 @@ import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
 import { citext } from '@electric-sql/pglite/contrib/citext';
 import { pg_trgm } from '@electric-sql/pglite/contrib/pg_trgm';
 import type { Queryable, QueryResult } from '../db/client.js';
+import { config } from '../config/env.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const DB_DIR = resolve(here, '../../../db');
@@ -80,6 +81,14 @@ export async function createTestDb(options: TestDbOptions = {}): Promise<TestDb>
         await pglite.exec(sql);
     };
 
+    // En produccion el migrador fija estos GUCs antes del seed; aqui se hace
+    // lo mismo para que seed.sql no dependa de valores implicitos.
+    const execSeed = async (): Promise<void> => {
+        const sql = await readFile(resolve(DB_DIR, 'seed.sql'), 'utf8');
+        const literal = config.auth.identityPepper.replace(/'/g, "''");
+        await pglite.exec(`SET cobranza.identity_pepper = '${literal}';\n${sql}`);
+    };
+
     const harness: TestDb = {
         db,
         pglite,
@@ -90,7 +99,7 @@ export async function createTestDb(options: TestDbOptions = {}): Promise<TestDb>
         async reset() {
             await pglite.exec('DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;');
             await execFile('schema.sql');
-            if (options.seed !== false) await execFile('seed.sql');
+            if (options.seed !== false) await execSeed();
         },
         async close() {
             await pglite.close();
@@ -102,7 +111,7 @@ export async function createTestDb(options: TestDbOptions = {}): Promise<TestDb>
         if (options.seed !== false) await harness.reset();
     } else if (options.seed === true) {
         await execFile('schema.sql');
-        await execFile('seed.sql');
+        await execSeed();
     }
     return harness;
 }

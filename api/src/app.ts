@@ -152,9 +152,20 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     });
 
     await app.register(helmet, {
-        // La API no sirve HTML propio: una CSP restrictiva solo complica las
-        // descargas de reportes.
-        contentSecurityPolicy: false,
+        contentSecurityPolicy: {
+            directives: {
+                defaultSrc: ["'self'"],
+                scriptSrc: ["'self'"],
+                styleSrc: ["'self'"],
+                imgSrc: ["'self'", 'data:'],
+                connectSrc: ["'self'"],
+                fontSrc: ["'self'"],
+                objectSrc: ["'none'"],
+                frameAncestors: ["'none'"],
+                baseUri: ["'self'"],
+                formAction: ["'self'"],
+            },
+        },
         crossOriginResourcePolicy: { policy: 'same-site' },
     });
 
@@ -171,38 +182,42 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
         sign: { expiresIn: config.auth.accessTtl },
     });
 
-    await app.register(swagger, {
-        openapi: {
-            info: {
-                title: 'API de Cobranza',
-                description:
-                    'API REST de gestion de cobranza y portal de clientes. Dos superficies ' +
-                    'separadas: /portal (clientes) y /admin (personal). Cada una exige su ' +
-                    'propio tipo de token; un token de cliente no sirve para la API admin.',
-                version: '1.0.0',
-            },
-            servers: [{ url: API_PREFIX }],
-            tags: [
-                { name: 'Portal', description: 'Portal del cliente' },
-                { name: 'Portal - Autenticacion', description: 'Acceso del cliente' },
-                { name: 'Admin', description: 'Panel administrativo' },
-                { name: 'Admin - Clientes' },
-                { name: 'Admin - Planes' },
-                { name: 'Admin - Pagos' },
-                { name: 'Admin - Reportes' },
-                { name: 'Admin - Autenticacion' },
-                { name: 'Admin - Usuarios' },
-                { name: 'Webhooks' },
-            ],
-            components: {
-                securitySchemes: {
-                    bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+    // Swagger solo fuera de produccion: en produccion expone el mapa completo
+    // de la API a cualquiera. Sin valor funcional, solo informacion.
+    if (!config.isProduction) {
+        await app.register(swagger, {
+            openapi: {
+                info: {
+                    title: 'API de Cobranza',
+                    description:
+                        'API REST de gestion de cobranza y portal de clientes. Dos superficies ' +
+                        'separadas: /portal (clientes) y /admin (personal). Cada una exige su ' +
+                        'propio tipo de token; un token de cliente no sirve para la API admin.',
+                    version: '1.0.0',
+                },
+                servers: [{ url: API_PREFIX }],
+                tags: [
+                    { name: 'Portal', description: 'Portal del cliente' },
+                    { name: 'Portal - Autenticacion', description: 'Acceso del cliente' },
+                    { name: 'Admin', description: 'Panel administrativo' },
+                    { name: 'Admin - Clientes' },
+                    { name: 'Admin - Planes' },
+                    { name: 'Admin - Pagos' },
+                    { name: 'Admin - Reportes' },
+                    { name: 'Admin - Autenticacion' },
+                    { name: 'Admin - Usuarios' },
+                    { name: 'Webhooks' },
+                ],
+                components: {
+                    securitySchemes: {
+                        bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+                    },
                 },
             },
-        },
-    });
+        });
 
-    await app.register(swaggerUi, { routePrefix: '/docs', uiConfig: { docExpansion: 'list' } });
+        await app.register(swaggerUi, { routePrefix: '/docs', uiConfig: { docExpansion: 'list' } });
+    }
 
     /**
      * Se guarda el cuerpo CRUDO antes de parsearlo.
