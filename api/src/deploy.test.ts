@@ -43,7 +43,7 @@ describe('Migraciones en el arranque', () => {
         await withFreshDb(async (db) => {
             const result = await runMigrations(db);
 
-            assert.deepEqual(result.applied, ['001']);
+            assert.deepEqual(result.applied, ['001', '003']);
             assert.deepEqual(result.skipped, []);
             assert.equal(result.seeded, false, 'sin seed=true no debe sembrar');
 
@@ -51,6 +51,46 @@ describe('Migraciones en el arranque', () => {
                 `SELECT COUNT(*)::int AS n FROM clients`
             );
             assert.equal(Number(clientes.rows[0]?.n), 0, 'la tabla clients existe y esta vacia');
+
+            const columna = await db.query(
+                `SELECT 1 FROM information_schema.columns
+                  WHERE table_name = 'clients' AND column_name = 'portal_view'`
+            );
+            assert.equal(columna.rows.length, 1, 'portal_view debe existir tras migrar');
+        });
+    });
+
+    /**
+     * Regresion: la columna portal_view se anadio a schema.sql una vez que la
+     * base de desarrollo ya tenia 001 aplicada. Sin registrarla como migracion,
+     * esas bases se quedan sin la columna y el login del portal responde 500.
+     */
+    it('003 anade portal_view a una base que ya tenia 001 aplicada', async () => {
+        await withFreshDb(async (db) => {
+            await runMigrations(db);
+
+            // Se simula el esquema viejo: la columna no existia (habia que
+            // quitar la vista antes, porque depende de ella) y 003 no constaba.
+            await db.exec(
+                `DROP VIEW v_client_portfolio;
+                 ALTER TABLE clients DROP COLUMN portal_view;
+                 DELETE FROM schema_migrations WHERE version = '003';`
+            );
+
+            const result = await runMigrations(db);
+            assert.ok(result.applied.includes('003'), 'debe aplicar 003');
+
+            const columna = await db.query(
+                `SELECT 1 FROM information_schema.columns
+                  WHERE table_name = 'clients' AND column_name = 'portal_view'`
+            );
+            assert.equal(columna.rows.length, 1, 'portal_view debe reaparecer');
+
+            const vista = await db.query(
+                `SELECT 1 FROM information_schema.views
+                  WHERE table_name = 'v_client_portfolio'`
+            );
+            assert.equal(vista.rows.length, 1, 'la vista debe recrearse');
         });
     });
 
@@ -60,7 +100,7 @@ describe('Migraciones en el arranque', () => {
             const segunda = await runMigrations(db);
 
             assert.deepEqual(segunda.applied, [], 'no debe reaplicar migraciones ya aplicadas');
-            assert.deepEqual(segunda.skipped, ['001']);
+            assert.deepEqual(segunda.skipped, ['001', '003']);
         });
     });
 
@@ -70,7 +110,7 @@ describe('Migraciones en el arranque', () => {
             // no-op. El servicio gratuito se duerme a los 15 min y despierta
             // muchas veces al dia: repetir el arranque tiene que ser seguro.
             const primera = await runMigrations(db);
-            assert.deepEqual(primera.applied, ['001'], 'el primer arranque crea el esquema');
+            assert.deepEqual(primera.applied, ['001', '003'], 'el primer arranque crea el esquema');
 
             for (let reinicio = 1; reinicio <= 5; reinicio++) {
                 const result = await runMigrations(db);
@@ -78,7 +118,7 @@ describe('Migraciones en el arranque', () => {
                     result.applied, [],
                     `reinicio ${reinicio} reaplico el esquema`
                 );
-                assert.deepEqual(result.skipped, ['001']);
+                assert.deepEqual(result.skipped, ['001', '003']);
             }
 
             const applied = await db.query<{ n: number }>(

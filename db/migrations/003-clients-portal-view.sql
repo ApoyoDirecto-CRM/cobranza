@@ -1,9 +1,10 @@
 -- Migracion 003: vista configurable del portal por cliente.
 -- Agrega clients.portal_view (JSONB). Una clave ausente = seccion visible.
 --
--- Ejecutar a mano sobre una base con el esquema viejo:
+-- Corre automaticamente al arrancar (registrada en db/migrator.ts). Es segura
+-- sobre una base nueva (schema.sql ya creo la columna) y sobre una que ya tenia
+-- 001 aplicada (aqui se anade). El script manual queda para psql:
 --   \i db/migrations/003-clients-portal-view.sql
--- Render despliega desde cero, donde schema.sql ya crea la columna.
 
 BEGIN;
 

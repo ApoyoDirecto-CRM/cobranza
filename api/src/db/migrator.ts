@@ -32,6 +32,10 @@ interface Migration {
 
 const MIGRATIONS: Migration[] = [
     { version: '001', file: 'schema.sql' },
+    // 003 anade `clients.portal_view` a bases que ya tenian 001 aplicada (en
+    // schema.sql la columna ya existe, asi que alli es no-op). Es SQL plano
+    // compatible con PGlite, por eso si corre en el arranque.
+    { version: '003', file: 'migrations/003-clients-portal-view.sql' },
     // 002 se ejecuta solo como script manual sobre bases existentes (ver
     // db/migrations/002-clients-identity-hash.sql): PGlite no soporta pgcrypto
     // crypt() y Render despliega desde cero, donde schema.sql ya crea

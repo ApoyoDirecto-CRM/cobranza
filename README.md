@@ -628,7 +628,12 @@ de secretos externo.
    la API.
 4. **HTTPS obligatorio** — el refresh token viaja en cookie `Secure`.
 5. **Migración continua** — el esquema actual es la migración 001. Para futuras,
-   añade archivos en `db/migrations/NNN-*.sql` en vez de editar `schema.sql`.
+   añade archivos en `db/migrations/NNN-*.sql` en vez de editar `schema.sql`, y
+   **regístralos en `api/src/db/migrator.ts`** para que corran al arrancar. Si una
+   migración toca una columna que `schema.sql` ya crea (para instalaciones nuevas),
+   que sea idempotente (`ADD COLUMN IF NOT EXISTS`), como la 003: así la misma
+   migración sirve para una base nueva y para una que ya tenía 001. La 002 es la
+   excepción: se ejecuta a mano por depender de `pgcrypto`.
 
 ### Variable `VITE_API_BASE_URL`
 

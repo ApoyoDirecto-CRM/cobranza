@@ -175,9 +175,9 @@ CREATE TABLE clients (
     portal_enabled      BOOLEAN NOT NULL DEFAULT TRUE,
     -- Que secciones ve el cliente en el portal. El admin lo edita por cliente;
     -- una clave ausente se interpreta como visible (ver api/src/shared/portalView.ts).
+    -- El CHECK lo anade la migracion 003 (misma columna en ambas rutas).
     portal_view         JSONB NOT NULL DEFAULT
-                        '{"summary":true,"plans":true,"installments":true,"payments":true,"paymentInstructions":true,"card":true}'::jsonb
-                        CHECK (jsonb_typeof(portal_view) = 'object'),
+                        '{"summary":true,"plans":true,"installments":true,"payments":true,"paymentInstructions":true,"card":true}'::jsonb,
 
     -- Cuenta SPEI asignada (CLABE que el cliente debe usar).
     payment_account_id  BIGINT REFERENCES payment_accounts(id)
