@@ -631,9 +631,9 @@ de secretos externo.
    añade archivos en `db/migrations/NNN-*.sql` en vez de editar `schema.sql`, y
    **regístralos en `api/src/db/migrator.ts`** para que corran al arrancar. Si una
    migración toca una columna que `schema.sql` ya crea (para instalaciones nuevas),
-   que sea idempotente (`ADD COLUMN IF NOT EXISTS`), como la 003: así la misma
-   migración sirve para una base nueva y para una que ya tenía 001. La 002 es la
-   excepción: se ejecuta a mano por depender de `pgcrypto`.
+   que sea idempotente (`ADD COLUMN IF NOT EXISTS` / `ADD CONSTRAINT` guardado).
+   Las migraciones que necesitan lógica que no cabe en SQL (bcrypt, pepper) se
+   registran como función Node, como la 002 (`api/src/db/legacy.ts`).
 
 ### Variable `VITE_API_BASE_URL`
 

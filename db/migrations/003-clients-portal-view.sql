@@ -11,6 +11,9 @@ BEGIN;
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS portal_view JSONB NOT NULL DEFAULT
     '{"summary":true,"plans":true,"installments":true,"payments":true,"paymentInstructions":true,"card":true}'::jsonb;
 
+-- DROP + ADD en vez de ADD a secas: si el script ya se corrio a mano (sin
+-- registrarse) o se reejecuta, no falla por constraint duplicado.
+ALTER TABLE clients DROP CONSTRAINT IF EXISTS clients_portal_view_ck;
 ALTER TABLE clients ADD CONSTRAINT clients_portal_view_ck
     CHECK (jsonb_typeof(portal_view) = 'object');
 

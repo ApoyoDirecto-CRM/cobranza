@@ -43,7 +43,7 @@ describe('Migraciones en el arranque', () => {
         await withFreshDb(async (db) => {
             const result = await runMigrations(db);
 
-            assert.deepEqual(result.applied, ['001', '003']);
+            assert.deepEqual(result.applied, ['001', '002', '003', '004']);
             assert.deepEqual(result.skipped, []);
             assert.equal(result.seeded, false, 'sin seed=true no debe sembrar');
 
@@ -94,13 +94,74 @@ describe('Migraciones en el arranque', () => {
         });
     });
 
+    /**
+     * Regresion del despliegue en Render: la base se creo con el esquema
+     * inicial (identity_id en texto plano, sin OTP). El login del portal
+     * fallaba con 500 porque SELECT identity_hash no existia.
+     */
+    it('002/003/004 actualizan una base del esquema inicial', async () => {
+        await withFreshDb(async (db) => {
+            await runMigrations(db);
+
+            // Cliente de ejemplo, ya con el esquema actual.
+            await db.query(
+                `INSERT INTO clients
+                    (folio, full_name, phone, identity_type,
+                     identity_hash, identity_masked, identity_fingerprint)
+                 VALUES ('CLI-LEGACY', 'Cliente Legacy', '5511112222', 'curp',
+                         'x', 'x', repeat('a', 64))`
+            );
+
+            // Se retrocede al esquema inicial.
+            await db.exec(
+                `DROP VIEW v_client_portfolio;
+                 ALTER TABLE clients DROP COLUMN identity_hash CASCADE;
+                 ALTER TABLE clients DROP COLUMN identity_masked CASCADE;
+                 ALTER TABLE clients DROP COLUMN identity_fingerprint CASCADE;
+                 ALTER TABLE clients DROP COLUMN portal_view CASCADE;
+                 ALTER TABLE clients ADD COLUMN identity_id VARCHAR(18) NOT NULL
+                     DEFAULT 'GODE561231GRERRN09';
+                 ALTER TABLE clients ALTER COLUMN identity_id DROP DEFAULT;
+                 DROP TABLE otp_codes;
+                 DELETE FROM schema_migrations WHERE version IN ('002', '003', '004');`
+            );
+
+            const result = await runMigrations(db);
+            assert.deepEqual(result.applied, ['002', '003', '004']);
+
+            const row = await db.query<{
+                identity_masked: string; fp_len: number; hash_prefix: string;
+            }>(
+                `SELECT identity_masked,
+                        length(identity_fingerprint)::int AS fp_len,
+                        substr(identity_hash, 1, 4) AS hash_prefix
+                   FROM clients WHERE folio = 'CLI-LEGACY'`
+            );
+            assert.equal(row.rows[0]?.identity_masked, 'GODE**********RN09');
+            assert.equal(row.rows[0]?.fp_len, 64, 'el indice ciego debe ser SHA-256 hex');
+            assert.equal(row.rows[0]?.hash_prefix, '$2b$', 'el documento debe quedar en bcrypt');
+
+            const otp = await db.query(
+                `SELECT 1 FROM information_schema.tables
+                  WHERE table_name = 'otp_codes'`
+            );
+            assert.equal(otp.rows.length, 1, 'otp_codes debe crearse');
+
+            const columna = await db.query(
+                `SELECT 1 FROM information_schema.columns
+                  WHERE table_name = 'clients' AND column_name = 'portal_view'`
+            );
+            assert.equal(columna.rows.length, 1, 'portal_view debe crearse');
+        });
+    });
+
     it('es idempotente: el segundo arranque no vuelve a aplicar nada', async () => {
         await withFreshDb(async (db) => {
             await runMigrations(db);
             const segunda = await runMigrations(db);
 
             assert.deepEqual(segunda.applied, [], 'no debe reaplicar migraciones ya aplicadas');
-            assert.deepEqual(segunda.skipped, ['001', '003']);
+            assert.deepEqual(segunda.skipped, ['001', '002', '003', '004']);
         });
     });
 
@@ -110,7 +171,7 @@ describe('Migraciones en el arranque', () => {
             // no-op. El servicio gratuito se duerme a los 15 min y despierta
             // muchas veces al dia: repetir el arranque tiene que ser seguro.
             const primera = await runMigrations(db);
-            assert.deepEqual(primera.applied, ['001', '003'], 'el primer arranque crea el esquema');
+            assert.deepEqual(primera.applied, ['001', '002', '003', '004'], 'el primer arranque crea el esquema');
 
             for (let reinicio = 1; reinicio <= 5; reinicio++) {
                 const result = await runMigrations(db);
@@ -118,7 +179,7 @@ describe('Migraciones en el arranque', () => {
                     result.applied, [],
                     `reinicio ${reinicio} reaplico el esquema`
                 );
-                assert.deepEqual(result.skipped, ['001', '003']);
+                assert.deepEqual(result.skipped, ['001', '002', '003', '004']);
             }
 
             const applied = await db.query<{ n: number }>(

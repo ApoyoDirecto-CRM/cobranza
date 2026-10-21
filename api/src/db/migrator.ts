@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from '../config/env.js';
 import type { Queryable } from './client.js';
+import { upgradeLegacyIdentity } from './legacy.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const DB_DIR = resolve(here, '../../../db');
@@ -27,19 +28,24 @@ const DB_DIR = resolve(here, '../../../db');
  */
 interface Migration {
     version: string;
-    file: string;
+    /** Archivo .sql relativo a db/. */
+    file?: string;
+    /** Migracion de datos en Node (no cabe en SQL puro). */
+    run?: (db: Queryable) => Promise<void>;
 }
 
 const MIGRATIONS: Migration[] = [
     { version: '001', file: 'schema.sql' },
+    // 002 convierte bases con `identity_id` en texto plano al modelo hasheado.
+    // Necesita bcrypt + pepper, que PGlite no ofrece en SQL, por eso va en Node.
+    // No-op si la base ya es nueva.
+    { version: '002', run: upgradeLegacyIdentity },
     // 003 anade `clients.portal_view` a bases que ya tenian 001 aplicada (en
     // schema.sql la columna ya existe, asi que alli es no-op). Es SQL plano
     // compatible con PGlite, por eso si corre en el arranque.
     { version: '003', file: 'migrations/003-clients-portal-view.sql' },
-    // 002 se ejecuta solo como script manual sobre bases existentes (ver
-    // db/migrations/002-clients-identity-hash.sql): PGlite no soporta pgcrypto
-    // crypt() y Render despliega desde cero, donde schema.sql ya crea
-    // identity_hash/identity_masked directamente.
+    // 004 crea `otp_codes` en bases anteriores al OTP.
+    { version: '004', file: 'migrations/004-otp-codes.sql' },
 ];
 
 /**
@@ -115,17 +121,23 @@ export async function runMigrations(
                 continue;
             }
 
-            const path = resolve(DB_DIR, migration.file);
-            if (!existsSync(path)) {
+            const path = migration.file ? resolve(DB_DIR, migration.file) : null;
+            if (path && !existsSync(path)) {
                 throw new Error(`No se encontro el archivo de migracion: ${path}`);
             }
-            const sql = await readFile(path, 'utf8');
 
             // El archivo lleva su propio BEGIN/COMMIT, asi que va por `exec`
             // (script de varias sentencias) y no por `query`.
             // La version se registra DESPUES, no antes: si el DDL falla a
             // mitad, no debe quedar marcado como aplicado.
-            await db.exec(sql);
+            if (path) {
+                const sql = await readFile(path, 'utf8');
+                await db.exec(sql);
+            } else if (migration.run) {
+                await migration.run(db);
+            } else {
+                throw new Error(`La migracion ${migration.version} no tiene archivo ni funcion`);
+            }
             await db.query('INSERT INTO schema_migrations (version) VALUES ($1)', [migration.version]);
             result.applied.push(migration.version);
         }
