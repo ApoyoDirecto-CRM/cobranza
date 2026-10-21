@@ -569,7 +569,7 @@ La primera visita tarda: el servicio está despertándose.
 
 | Pieza | Por qué |
 |-------|---------|
-| `AUTO_MIGRATE=true` | El plan gratuito **no tiene `preDeployCommand`**, así que las migraciones corren al arrancar el proceso. Son idempotentes: el servicio se reinicia muchas veces al día por el frío. |
+| `AUTO_MIGRATE` | El plan gratuito **no tiene `preDeployCommand`**, así que las migraciones corren al arrancar el proceso. En Render se activan solas (aunque falte la variable) y el blueprint las fija en `true`. Un `false` explícito siempre manda. Son idempotentes: el servicio se reinicia muchas veces al día por el frío. |
 | `SEED_ON_DEPLOY=true` | Inserta datos de demo **solo si la base está vacía**. En cuanto metas datos reales, ponlo en `false`. |
 | `generateValue: true` | Los tres secretos se generan en Render y no quedan escritos en git. El arranque **aborta** si faltan o si son los de ejemplo. |
 | `healthCheckPath: /health` | Verifica API **y** base de datos. Si la base cae, Render deja de enrutar tráfico en vez de servir 502. |

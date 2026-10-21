@@ -120,12 +120,25 @@ describe('Autenticacion del portal', () => {
             payload: { phone: CLIENT.phone, identityId: 'GODE561231GRERRN08' },
         });
         await loginClient();
+        // Varios accesos correctos seguidos no deben acumular fallos.
+        await loginClient();
+        await loginClient();
 
         const despues = await app.inject({
             method: 'POST', url: '/api/v1/auth/login',
             payload: { phone: CLIENT.phone, identityId: 'GODE561231GRERRN08' },
         });
         assert.equal(despues.statusCode, 401, 'vuelve a 401 y no a 423: el contador se reinicio');
+    });
+
+    it('un login correcto no se registra como intento fallido', async () => {
+        await harness.db.query('DELETE FROM login_attempts');
+        await loginClient();
+
+        const fallos = await harness.db.query<{ n: number }>(
+            `SELECT COUNT(*)::int AS n FROM login_attempts WHERE success = FALSE`
+        );
+        assert.equal(Number(fallos.rows[0]?.n), 0, 'un acceso valido no debe contar como fallo');
     });
 });
 

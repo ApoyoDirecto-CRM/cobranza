@@ -43,7 +43,7 @@ describe('Migraciones en el arranque', () => {
         await withFreshDb(async (db) => {
             const result = await runMigrations(db);
 
-            assert.deepEqual(result.applied, ['001', '002', '003', '004']);
+            assert.deepEqual(result.applied, ['001', '002', '003', '004', '005']);
             assert.deepEqual(result.skipped, []);
             assert.equal(result.seeded, false, 'sin seed=true no debe sembrar');
 
@@ -161,7 +161,7 @@ describe('Migraciones en el arranque', () => {
             const segunda = await runMigrations(db);
 
             assert.deepEqual(segunda.applied, [], 'no debe reaplicar migraciones ya aplicadas');
-            assert.deepEqual(segunda.skipped, ['001', '002', '003', '004']);
+            assert.deepEqual(segunda.skipped, ['001', '002', '003', '004', '005']);
         });
     });
 
@@ -171,7 +171,7 @@ describe('Migraciones en el arranque', () => {
             // no-op. El servicio gratuito se duerme a los 15 min y despierta
             // muchas veces al dia: repetir el arranque tiene que ser seguro.
             const primera = await runMigrations(db);
-            assert.deepEqual(primera.applied, ['001', '002', '003', '004'], 'el primer arranque crea el esquema');
+            assert.deepEqual(primera.applied, ['001', '002', '003', '004', '005'], 'el primer arranque crea el esquema');
 
             for (let reinicio = 1; reinicio <= 5; reinicio++) {
                 const result = await runMigrations(db);
@@ -179,7 +179,7 @@ describe('Migraciones en el arranque', () => {
                     result.applied, [],
                     `reinicio ${reinicio} reaplico el esquema`
                 );
-                assert.deepEqual(result.skipped, ['001', '002', '003', '004']);
+                assert.deepEqual(result.skipped, ['001', '002', '003', '004', '005']);
             }
 
             const applied = await db.query<{ n: number }>(

@@ -90,6 +90,18 @@ if (driverRaw !== 'postgres' && driverRaw !== 'pglite') {
 const driver = driverRaw as DatabaseDriver;
 const isLocalDb = driver === 'pglite';
 
+/**
+ * Render inyecta estas variables en cada servicio. Se usan para que el
+ * comportamiento por defecto sea el correcto aun si el blueprint no se
+ * sincronizo y `AUTO_MIGRATE` no llego al entorno: sin migraciones, una base
+ * existente se queda con el esquema viejo y el login responde 500.
+ */
+const isRender = Boolean(
+    process.env.RENDER === 'true' ||
+    process.env.RENDER_SERVICE_NAME ||
+    process.env.RENDER_EXTERNAL_URL
+);
+
 if (isLocalDb && isProduction) {
     throw new ConfigError(
         'DB_DRIVER=pglite no puede combinarse con NODE_ENV=production: la base vive ' +
@@ -175,10 +187,12 @@ export const config = {
          * Necesario en Render gratuito: `preDeployCommand` es de pago, y el
          * servicio se reinicia muchas veces al dia por el cold start.
          *
-         * Por defecto se activa SOLO en modo local, donde la base nace vacia en
-         * cada proceso. En produccion el valor por defecto sigue siendo `false`.
+         * Por defecto se activa en local (la base nace vacia en cada proceso) y
+         * en Render (ahi no existe `preDeployCommand`). En cualquier otro
+         * despliegue el valor por defecto sigue siendo `false`. Un
+         * `AUTO_MIGRATE=false` explicito siempre manda.
          */
-        autoMigrate: str('AUTO_MIGRATE', isLocalDb ? 'true' : 'false') === 'true',
+        autoMigrate: str('AUTO_MIGRATE', isLocalDb || isRender ? 'true' : 'false') === 'true',
         /**
          * Inserta datos de demostracion si la base esta vacia.
          *

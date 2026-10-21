@@ -46,6 +46,9 @@ const MIGRATIONS: Migration[] = [
     { version: '003', file: 'migrations/003-clients-portal-view.sql' },
     // 004 crea `otp_codes` en bases anteriores al OTP.
     { version: '004', file: 'migrations/004-otp-codes.sql' },
+    // 005 repara los bloqueos falsos que dejo el login viejo (contaba como
+    // fallo incluso un acceso correcto).
+    { version: '005', file: 'migrations/005-reset-client-login-attempts.sql' },
 ];
 
 /**
