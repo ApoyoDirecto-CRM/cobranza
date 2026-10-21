@@ -226,7 +226,11 @@ export async function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps): 
                 const { sendSms } = await import('../services/otp.js');
                 await sendSms(phone, code);
             } else {
-                app.log.warn(`[OTP] codigo para ${phone}: ${code}`);
+                // `app.log` se apaga en produccion (NODE_ENV=production), justo
+                // donde corre Render. El proveedor `console` existe para poder
+                // leer el OTP desde los logs del servicio, asi que se escribe
+                // con la consola directa y no con el logger de Fastify.
+                console.warn(`[OTP] codigo para ${phone}: ${code}`);
             }
 
             return {
